@@ -1,192 +1,36 @@
 ---
-title: "Working Code Document"
-author: "Group 7"
-date: "`r Sys.Date()`"
-output: html_document
+title: "week 4"
+author: "Zoja Pleteršek"
+date: "2026-02-24"
+output:
+  pdf_document: default
+  html_document: default
 ---
 
-# Data Wrangling
-
-```{r data_wrangling}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(dplyr)
-library(ggplot2)
-library(gridExtra)
-library(readr)
-library(ggdag)
-load(file='obesity.Rda')
+obesity = read_csv("DF_mutated.csv")
 
-other_outcomes <- c("diabetes", "MI", "angina", "stroke", "death") 
-
-# Data wrangling: remove unused outcomes + rows with NAs
 data <- obesity %>%
-  select(!other_outcomes) %>%
   na.omit()
+1-nrow(data)/nrow(obesity)
 
-# Mutate to binary 
-obesity <- data %>%
-  mutate(medhyper = case_when(
-    medhyper == "no" ~ 0,
-    medhyper == "yes" ~ 1,),
-    CVD = case_when(
-      CVD == "No" ~ 0,
-      CVD == "Yes" ~ 1,))
-
-## Transform variables 
-# Adiposity
-plot(obesity$bmi, obesity$waist)
-adiposity_model <- lm(bmi ~ waist, data = obesity)
-summary(adiposity_model)
-
-obesity$adiposity <- scale(obesity$bmi) + scale(obesity$waist)
-
-# BP
-plot(obesity$SYSBP, obesity$DIABP)
-bp_model <- lm(SYSBP ~ DIABP, data = obesity)
-summary(bp_model)
-
-obesity$MAP <- (obesity$SYSBP + 2*obesity$DIABP)/3
-
-# Alcohol 
-obesity$alcohol <- case_when(obesity$alcohol > 5 ~ 6,
-          obesity$alcohol == 5 ~ 5,
-          obesity$alcohol == 4 ~ 4,
-          obesity$alcohol == 3 ~ 3,
-          obesity$alcohol == 2 ~ 2,
-          obesity$alcohol == 1 ~ 1,
-          obesity$alcohol == 0 ~ 0) 
-
-# Look if populations are comparable for pre-treatment covariates
-## Age
-p1 <- ggplot(obesity, aes(x = age, fill = factor(medhyper))) +
-  geom_density(alpha = 0.5) +
-  theme(legend.position = "none")
-
-
-## Sex
-p2 <- ggplot(obesity, aes(x = factor(sex), fill = factor(medhyper))) +
-  geom_bar(position = "fill") +
-  theme(legend.position = "none")
-
-
-## Adiposity 
-p3 <- ggplot(obesity, aes(x = adiposity, fill = factor(medhyper))) +
-  geom_density(alpha = 0.5) +
-  theme(legend.position = "none")
-
-
-## BP
-p4 <- ggplot(obesity, aes(x = MAP, fill = factor(medhyper))) +
-  geom_density(alpha = 0.5) +
-  theme(legend.position = "none")
-
-## Smoking
-p5 <- ggplot(obesity, aes(x = factor(current.smoking), fill = factor(medhyper))) +
-  geom_bar(position = "fill") +
-  theme(legend.position = "none")
-
-## Alcohol
-p6 <- ggplot(obesity, aes(x = factor(alcohol), fill = factor(medhyper))) +
-  geom_bar(position = "fill") +
-  theme(legend.position = "none")
-
-## Statins
-p7 <- ggplot(obesity, aes(x = factor(medstatin), fill = factor(medhyper))) +
-  geom_bar(position = "fill") +
-  theme(legend.position = "none")
-
-## Glucose
-p8 <- ggplot(obesity, aes(x = factor(medglucose), fill = factor(medhyper))) +
-  geom_bar(position = "fill") +
-  theme(legend.position = "none")
-
-
-grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,nrow = 4)
+obesity = data
 ```
 
-## DAG
-
-```{r dag}
-obesity_dag <- dagify(
-  adiposity ~ age + sex, 
-  medglucose ~ age + sex + adiposity, 
-  BP ~ age + sex + adiposity + medglucose + smoking + alcohol, 
-  medhyper ~ BP,
-  CVD ~ age + sex + smoking + alcohol + adiposity + BP + medhyper + medglucose,
-  coords = time_ordered_coords(
-    list(
-      # time point 1
-      c("age", "sex"),
-      # time point 2
-      c("smoking","alcohol"),
-      # time point 3
-      c("adiposity"),
-      # time point 4
-      c("medglucose", "BP"),
-      # time point 5
-      c("medhyper"),
-      # time point 6
-      c("CVD")
-    )
-  ),
-  exposure = "medhyper",
-  outcome = "CVD",
-  labels = c(
-    CVD = "CVD",
-    medhyper = "medhyper",
-    medglucose = "diabetes",
-    age = "age",
-    sex = "sex",
-    smoking = 'smoking', 
-    adiposity = 'adiposity',
-    alcohol = "alcohol",
-    BP = "BP"
-  )
-)
-ggdag(obesity_dag, use_labels = "label", text = FALSE) +
-  theme_dag()
-
-obesity_dag_tidy <- obesity_dag %>%
-  tidy_dagitty()
-
-obesity_dag_tidy
-
-
-obesity_dag_tidy %>%
-  dag_paths() %>%
-  filter(set == 2, path == "open path")
-
-library(dagitty)
-obesity_dag_tidy %>%
-  pull_dag() %>%
-  paths()
-
-
-
-ggdag_adjustment_set(
-  obesity_dag,
-  text = FALSE,
-  use_labels = "label"
-)
-
-adjustmentSets(obesity_dag, type = "canonical")
-
-obesity_dag %>% adjustmentSets()
-```
+This should be all run on a clean dataset where (the dead are removed?) and where the MAP and adiposity are defined. 
 
 # Identifying confounders
 
 ## T-tests
-
-```{r t-tests}
+```{r}
 t.test(obesity$age ~ obesity$medhyper) #significant
 t.test(obesity$adiposity ~ obesity$medhyper) #significant
 t.test(obesity$MAP ~ obesity$medhyper) #significant
 ```
 
-## Chi square
-
-```{r chi square}
+## Chi square 
+```{r}
 chisq.test(obesity$sex, obesity$medhyper) #significant 
 chisq.test(obesity$current.smoking, obesity$medhyper) #not significant 
 chisq.test(obesity$alcohol, obesity$medhyper) #significant 
@@ -194,9 +38,10 @@ chisq.test(obesity$medstatin, obesity$medhyper) #significant
 chisq.test(obesity$medglucose, obesity$medhyper) #significant 
 ```
 
-# Outcome regression
 
-```{r outcome_regression}
+
+# Outcome regression
+```{r}
 glm = glm(CVD ~ medhyper + 
             age + medhyper*age +
             sex + medhyper*sex +
@@ -210,11 +55,10 @@ glm = glm(CVD ~ medhyper +
 summary(glm)
 ```
 
+
 # G-formula
-
 ## Step 1
-
-```{r g-formula}
+```{r}
 g_model = glm(CVD ~ medhyper + 
             age + medhyper*age +
             sex + medhyper*sex +
@@ -229,15 +73,15 @@ summary(g_model)
 ```
 
 ## Step 2
-
-```{r step 2}
+```{r}
 obesity1 = obesity
 obesity1$medhyper = 1
 YE1 = predict(g_model, newdata = obesity1, type="response")
 mean_YE1 = mean(YE1, na.rm = T)
 ```
 
-```{r step 2.5}
+
+```{r}
 obesity0 = obesity
 obesity0$medhyper = 0
 YE0 = predict(g_model, newdata = obesity0, type="response")
@@ -246,16 +90,15 @@ mean_YE0 = mean(YE0, na.rm = T)
 ```
 
 ## Step 3
-
-```{r step 3}
+```{r}
 mean_YE1- mean_YE0 #average treatment effect (ATE)
 
 (mean_YE1/(1-mean_YE1))/(mean_YE0/(1-mean_YE0)) #causal odds ratio
 ```
 
-# Bootstrap to get the CI
 
-```{r bootstrap}
+# Bootstrap to get the CI
+```{r}
 set.seed(123)
 B = 1000
 ATE_boot = numeric(B)
@@ -306,18 +149,16 @@ quantile(OR_boot,  c(0.025, 0.975), na.rm = T)
 ```
 
 ## Positivity
-
-```{r positivity}
+```{r}
 table(obesity$sex, obesity$medhyper)
 table(obesity$current.smoking, obesity$medhyper)
 table(obesity$alcohol, obesity$medhyper)
 table(obesity$medstatin, obesity$medhyper)
 table(obesity$medglucose, obesity$medhyper)
 ```
-
 ## Visualization
 
-```{r visualisation}
+```{r}
 par(mfrow=c(1,2)) # Side-by-side plots
 
 # ATE Histogram
@@ -331,7 +172,7 @@ abline(v = mean(OR_boot), col="red", lwd=2)
 abline(v = quantile(OR_boot, c(0.025, 0.975)), col="red", lty=2)
 ```
 
-```{r summary results}
+```{r}
 # Create a summary data frame
 results_table <- data.frame(
   Metric = c("Average Treatment Effect (ATE)", "Odds Ratio (OR)"),
@@ -348,3 +189,6 @@ results_table$Formatted <- sprintf("%.3f (95%% CI: %.3f, %.3f)",
 
 print(results_table[, c("Metric", "Formatted")])
 ```
+
+
+
