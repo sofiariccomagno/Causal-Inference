@@ -5,7 +5,7 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-# Data Wrangling
+\# Data Wrangling
 
 ```{r data_wrangling}
 knitr::opts_chunk$set(echo = TRUE)
