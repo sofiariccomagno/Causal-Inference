@@ -6,6 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
+library(readr)
 knitr::opts_chunk$set(echo = TRUE)
 obesity = read_csv("DF_mutated.csv")
 ```
