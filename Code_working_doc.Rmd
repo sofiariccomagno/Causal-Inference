@@ -45,7 +45,7 @@ plot(obesity$SYSBP, obesity$DIABP)
 bp_model <- lm(SYSBP ~ DIABP, data = obesity)
 summary(bp_model)
 
-obesity$MAP <- (obesity$SYSBP + 2*obesity$DIABP)/3
+obesity$MAP <- obesity$DIABP + (obesity$SYSBP - obesity$DIABP)/3
 
 # Alcohol 
 obesity$alcohol <- case_when(obesity$alcohol > 5 ~ 6,
