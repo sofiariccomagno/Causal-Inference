@@ -14,6 +14,11 @@ library(ggplot2)
 library(patchwork)
 library(readr)
 library(ggdag)
+library(mice)
+library(VIM)
+library(naniar)
+
+
 load(file='obesity.Rda')
 
 other_outcomes <- c("diabetes", "MI", "angina", "stroke", "death") 
@@ -462,3 +467,94 @@ results_table$Formatted <- sprintf("%.3f (95%% CI: %.3f, %.3f)",
 
 print(results_table[, c("Metric", "Formatted")])
 ```
+## Missing data
+
+
+
+
+
+```{r}
+obesity_incomplete = obesity
+View(obesity_incomplete)
+
+
+#-----------------NA patten visualization ---------------------
+
+gg_miss_var(obesity_incomplete)
+
+missing_pattern = md.pattern(obesity_incomplete)
+missing_pattern
+
+aggr(obesity_incomplete, numbers = TRUE, sortVars = TRUE)
+# (diabetes - CVD - angina - death) are the variables where we find NAs together consistently
+
+
+# df of only imcompete data
+incomplete_rows = obesity_incomplete %>%
+  filter(if_any(everything(), is.na))
+View(incomplete_rows)
+
+# summarise the number of NAs
+sum_incomplete = incomplete_rows %>%
+group_by(medhyper) %>%
+  summarise(na_CVD = sum(is.na(CVD)),
+    na_death = sum(is.na(death)))
+View(sum_incomplete)
+
+
+NA_Med_CVD = incomplete_rows %>%
+group_by(medhyper) %>% summarise(na_s = sum(is.na(CVD)))
+View(incomplete_rows)
+
+
+
+# -------------------testing--------------------------------
+#test wheter the data is MCAR
+test = mcar_test(obesity_incomplete)
+print(test) # is significant --> not MCAR
+
+obesity_incomplete$miss_CVD = is.na(obesity_incomplete$CVD)
+
+# see if missingness depends on other variables
+
+obesity_incomplete$miss_CVD = is.na(obesity_incomplete$CVD)
+
+# fix model; map/adiposity are missing, interactions?
+ model = glm(miss_CVD ~ medhyper + age + sex + current.smoking +
+          alcohol + medstatin + medglucose +bmi,
+          data = obesity_incomplete, family = binomial)
+ summary(model) # missingness depends on other variables
+ # MAR
+ 
+ 
+ # multiple imputations (if MAR was a correct choice)
+
+imp = mice(obesity_incomplete, m = 5, method = 'pmm') # predictive mean matching
+
+ 
+# Regressieanalysis on imputated data
+model_imp = with(imp, glm(miss_CVD ~ medhyper + age + 
+                            sex + current.smoking +
+          alcohol + medstatin + medglucose +bmi,
+          family = binomial))
+
+# pool results
+pooled_results= pool(model_imp)
+summary(pooled_results)
+ 
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
