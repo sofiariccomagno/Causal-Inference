@@ -11,7 +11,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(ggplot2)
-library(gridExtra)
+library(patchwork)
 library(readr)
 library(ggdag)
 load(file='obesity.Rda')
@@ -56,52 +56,112 @@ obesity$alcohol <- case_when(obesity$alcohol > 5 ~ 6,
           obesity$alcohol == 1 ~ 1,
           obesity$alcohol == 0 ~ 0) 
 
-# Look if populations are comparable for pre-treatment covariates
+# Quick look if populations are comparable for pre-treatment covariates
 ## Age
 p1 <- ggplot(obesity, aes(x = age, fill = factor(medhyper))) +
   geom_density(alpha = 0.5) +
-  theme(legend.position = "none")
-
+  labs(x = "Age") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 
 ## Sex
 p2 <- ggplot(obesity, aes(x = factor(sex), fill = factor(medhyper))) +
   geom_bar(position = "fill") +
-  theme(legend.position = "none")
+  labs(x = "Sex") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 
 
 ## Adiposity 
 p3 <- ggplot(obesity, aes(x = adiposity, fill = factor(medhyper))) +
   geom_density(alpha = 0.5) +
-  theme(legend.position = "none")
+  labs(x = "Adiposity") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 
 
 ## BP
 p4 <- ggplot(obesity, aes(x = MAP, fill = factor(medhyper))) +
   geom_density(alpha = 0.5) +
-  theme(legend.position = "none")
+  labs(x = "MAP") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 
 ## Smoking
 p5 <- ggplot(obesity, aes(x = factor(current.smoking), fill = factor(medhyper))) +
   geom_bar(position = "fill") +
-  theme(legend.position = "none")
+  labs(x = "Smoking") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 
 ## Alcohol
 p6 <- ggplot(obesity, aes(x = factor(alcohol), fill = factor(medhyper))) +
   geom_bar(position = "fill") +
-  theme(legend.position = "none")
+  labs(x = "Alcohol") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 
 ## Statins
 p7 <- ggplot(obesity, aes(x = factor(medstatin), fill = factor(medhyper))) +
   geom_bar(position = "fill") +
-  theme(legend.position = "none")
+  labs(x = "Statins") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 
 ## Glucose
 p8 <- ggplot(obesity, aes(x = factor(medglucose), fill = factor(medhyper))) +
   geom_bar(position = "fill") +
-  theme(legend.position = "none")
+  labs(x = "Glucose Meds") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 
+# Combine plots
+pop_plots <- list(p1, p2, p3, p4, p5, p6, p7, p8)
 
-grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,nrow = 4)
+wrap_plots(pop_plots, nrow = 4) +
+plot_layout(guides = "collect") &
+theme(legend.position = "bottom")
+
 ```
 
 ## DAG
@@ -114,10 +174,10 @@ library(ggplot2)
 
 obesity_dag <- dagify(
   Adiposity ~ Age + Sex,
-  Diabetes ~ Age + Sex + Adiposity,
-  BP ~ Age + Sex + Adiposity + Diabetes + Smoking + Alcohol,
-  MedHyper ~ BP + Diabetes,
-  CVD ~ Age + Sex + Smoking + Alcohol + Adiposity + BP + MedHyper + Diabetes,
+  Glucose ~ Age + Sex + Adiposity,
+  BP ~ Age + Sex + Adiposity + Glucose + Smoking + Alcohol,
+  MedHyper ~ BP + Glucose,
+  CVD ~ Age + Sex + Smoking + Alcohol + Adiposity + BP + MedHyper + Glucose,
   
   exposure = "MedHyper",
   outcome = "CVD",
@@ -129,7 +189,7 @@ obesity_dag <- dagify(
       Smoking = 2,
       Alcohol = 6,
       Adiposity = 4,
-      Diabetes= 4,
+      Glucose = 4,
       BP = 2,
       MedHyper = 4,
       CVD = 6
@@ -141,7 +201,7 @@ obesity_dag <- dagify(
       Smoking = 1,
       Alcohol = 1,
       Adiposity = 2.5,
-      Diabetes = 2,
+      Glucose = 2,
       BP = 1.5,
       MedHyper = 1.5,
       CVD = 1.5
@@ -337,6 +397,52 @@ abline(v = quantile(ATE_boot, c(0.025, 0.975)), col="red", lty=2)
 hist(OR_boot, breaks=20, main="Bootstrap OR", xlab="Odds Ratio", col="gray")
 abline(v = mean(OR_boot), col="red", lwd=2)
 abline(v = quantile(OR_boot, c(0.025, 0.975)), col="red", lty=2)
+
+
+
+# alternative with ggplot (can find prettier colours at https://r-charts.com/colors/)
+boots_df <- data.frame(
+  ATE = ATE_boot,
+  OR = OR_boot
+)
+
+ATE_plot <- ggplot(boots_df, aes(x = ATE)) +
+  geom_histogram(bins = 20, fill = "grey85") +
+  labs(title = "Bootstrap ATE",
+       x = "Risk Difference",
+       y = NULL) +
+  geom_vline(
+    aes(xintercept = mean(ATE_boot)),
+    color = "slateblue4", linewidth = 0.5) +
+  geom_vline(
+    aes(xintercept = quantile(ATE_boot, 0.025)),
+    color = "slateblue1", linewidth = 0.5, linetype ="dashed") +
+    geom_vline(
+    aes(xintercept = quantile(ATE_boot, 0.975)),
+    color = "slateblue1", linewidth = 0.5, linetype ="dashed") +
+  theme(panel.background = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        axis.line = element_line(colour = 'black', linewidth = 0.5))
+
+OR_plot <- ggplot(boots_df, aes(x = OR)) +
+  geom_histogram(bins = 20, fill = "grey85") +
+  labs(title = "Bootstrap OR",
+       x = "Odds Ratio",
+       y = NULL) +
+  geom_vline(
+    aes(xintercept = mean(OR_boot)),
+    color = "tomato4", linewidth = 0.5) +
+  geom_vline(
+    aes(xintercept = quantile(OR_boot, 0.025)),
+    color = "tomato1", linewidth = 0.5, linetype ="dashed") +
+    geom_vline(
+    aes(xintercept = quantile(OR_boot, 0.975)),
+    color = "tomato1", linewidth = 0.5, linetype ="dashed") +
+  theme(panel.background = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        axis.line = element_line(colour = 'black', linewidth = 0.5))
+
+wrap_plots(list(ATE_plot, OR_plot))
 ```
 
 ```{r summary results}
