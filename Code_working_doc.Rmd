@@ -107,71 +107,79 @@ grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,nrow = 4)
 ## DAG
 
 ```{r dag}
+library(ggdag)
+library(dagitty)
+library(ggplot2)
+
+
 obesity_dag <- dagify(
-  adiposity ~ age + sex, 
-  medglucose ~ age + sex + adiposity, 
-  BP ~ age + sex + adiposity + medglucose + smoking + alcohol, 
-  medhyper ~ BP,
-  CVD ~ age + sex + smoking + alcohol + adiposity + BP + medhyper + medglucose,
-  coords = time_ordered_coords(
-    list(
-      # time point 1
-      c("age", "sex"),
-      # time point 2
-      c("smoking","alcohol"),
-      # time point 3
-      c("adiposity"),
-      # time point 4
-      c("medglucose", "BP"),
-      # time point 5
-      c("medhyper"),
-      # time point 6
-      c("CVD")
-    )
-  ),
-  exposure = "medhyper",
+  Adiposity ~ Age + Sex,
+  Diabetes ~ Age + Sex + Adiposity,
+  BP ~ Age + Sex + Adiposity + Diabetes + Smoking + Alcohol,
+  MedHyper ~ BP + Diabetes,
+  CVD ~ Age + Sex + Smoking + Alcohol + Adiposity + BP + MedHyper + Diabetes,
+  
+  exposure = "MedHyper",
   outcome = "CVD",
-  labels = c(
-    CVD = "CVD",
-    medhyper = "medhyper",
-    medglucose = "diabetes",
-    age = "age",
-    sex = "sex",
-    smoking = 'smoking', 
-    adiposity = 'adiposity',
-    alcohol = "alcohol",
-    BP = "BP"
+  
+  coords = list(
+    x = c(
+      Age = 2,
+      Sex = 6,
+      Smoking = 2,
+      Alcohol = 6,
+      Adiposity = 4,
+      Diabetes= 4,
+      BP = 2,
+      MedHyper = 4,
+      CVD = 6
+    ),
+    
+    y = c(
+      Age = 3,
+      Sex = 3,
+      Smoking = 1,
+      Alcohol = 1,
+      Adiposity = 2.5,
+      Diabetes = 2,
+      BP = 1.5,
+      MedHyper = 1.5,
+      CVD = 1.5
+    )
   )
 )
-ggdag(obesity_dag, use_labels = "label", text = FALSE) +
-  theme_dag()
 
-obesity_dag_tidy <- obesity_dag %>%
-  tidy_dagitty()
+ggdag(obesity_dag, text_size = 2.4) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.background = element_blank())
 
-obesity_dag_tidy
 
 
-obesity_dag_tidy %>%
-  dag_paths() %>%
-  filter(set == 2, path == "open path")
-
-library(dagitty)
-obesity_dag_tidy %>%
-  pull_dag() %>%
-  paths()
-
+adjustmentSets(obesity_dag)
 
 
 ggdag_adjustment_set(
   obesity_dag,
-  text = FALSE,
-  use_labels = "label"
-)
-
-adjustmentSets(obesity_dag, type = "canonical")
-
-obesity_dag %>% adjustmentSets()
+  text = TRUE,
+  text_size = 2.4
+) +
+  theme(
+    legend.position = "bottom",
+    legend.text.position = "bottom",
+    legend.title = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+    )
 ```
 
 # Identifying confounders
