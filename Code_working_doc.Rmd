@@ -470,12 +470,8 @@ print(results_table[, c("Metric", "Formatted")])
 ## Missing data
 
 
-
-
-
 ```{r}
 obesity_incomplete = obesity
-View(obesity_incomplete)
 
 
 #-----------------NA patten visualization ---------------------
@@ -517,9 +513,7 @@ obesity_incomplete$miss_CVD = is.na(obesity_incomplete$CVD)
 
 # see if missingness depends on other variables
 
-obesity_incomplete$miss_CVD = is.na(obesity_incomplete$CVD)
-
-# fix model; map/adiposity are missing, interactions?
+# fix model; map/adiposity/bp are missing, interactions?
  model = glm(miss_CVD ~ medhyper + age + sex + current.smoking +
           alcohol + medstatin + medglucose +bmi,
           data = obesity_incomplete, family = binomial)
