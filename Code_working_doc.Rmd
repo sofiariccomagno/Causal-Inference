@@ -471,12 +471,41 @@ print(results_table[, c("Metric", "Formatted")])
 
 
 ```{r}
+#------------------Data wrangling on incomplete data--------------------------------------------------------------------
+load(file='obesity.Rda')
 obesity_incomplete = obesity
 
 
-#-----------------NA patten visualization ---------------------
+# Mutate to binary 
+obesity_incomplete = obesity_incomplete %>%
+  mutate(medhyper = case_when(
+    medhyper == "no" ~ 0,
+    medhyper == "yes" ~ 1,),
+    CVD = case_when(
+      CVD == "No" ~ 0,
+      CVD == "Yes" ~ 1,))
 
-gg_miss_var(obesity_incomplete)
+## Transform variables 
+
+# Adiposity
+plot(obesity_incomplete$bmi, obesity_incomplete$waist)
+adiposity_model <- lm(bmi ~ waist, data = obesity_incomplete)
+summary(adiposity_model)
+
+obesity_incomplete$adiposity <- scale(obesity_incomplete$bmi) + scale(obesity_incomplete$waist)
+
+# make Adiposity a numeric vector
+obesity_incomplete$adiposity = as.numeric(scale(obesity_incomplete$bmi)) + as.numeric(scale(obesity_incomplete$waist))
+
+# BP
+plot(obesity_incomplete$SYSBP, obesity_incomplete$DIABP)
+bp_model <- lm(SYSBP ~ DIABP, data = obesity_incomplete)
+summary(bp_model)
+
+obesity_incomplete$MAP <- obesity_incomplete$DIABP + (obesity_incomplete$SYSBP - obesity_incomplete$DIABP)/3
+
+
+#-----------------NA pattern visualization ------------------------------------------------------------------
 
 missing_pattern = md.pattern(obesity_incomplete)
 missing_pattern
@@ -485,57 +514,38 @@ aggr(obesity_incomplete, numbers = TRUE, sortVars = TRUE)
 # (diabetes - CVD - angina - death) are the variables where we find NAs together consistently
 
 
-# df of only imcompete data
-incomplete_rows = obesity_incomplete %>%
-  filter(if_any(everything(), is.na))
-View(incomplete_rows)
-
-# summarise the number of NAs
-sum_incomplete = incomplete_rows %>%
-group_by(medhyper) %>%
-  summarise(na_CVD = sum(is.na(CVD)),
-    na_death = sum(is.na(death)))
-View(sum_incomplete)
-
-
-NA_Med_CVD = incomplete_rows %>%
-group_by(medhyper) %>% summarise(na_s = sum(is.na(CVD)))
-View(incomplete_rows)
-
-
 
 # -------------------testing--------------------------------
-#test wheter the data is MCAR
+#test wheter the data is MCAR (apparently you can only do this when data is normally distributed...)
+
 test = mcar_test(obesity_incomplete)
 print(test) # is significant --> not MCAR
 
 obesity_incomplete$miss_CVD = is.na(obesity_incomplete$CVD)
 
+
 # see if missingness depends on other variables
-
-# fix model; map/adiposity/bp are missing, interactions?
- model = glm(miss_CVD ~ medhyper + age + sex + current.smoking +
-          alcohol + medstatin + medglucose +bmi,
-          data = obesity_incomplete, family = binomial)
- summary(model) # missingness depends on other variables
- # MAR
+model = glm(miss_CVD ~ medhyper + 
+            age + sex + adiposity + MAP + current.smoking +
+            alcohol + medstatin + medglucose,
+            data = obesity_incomplete, family = binomial)
  
+# missingness depends on other variables (age, sex) --> MAR?
+ summary(model)
  
- # multiple imputations (if MAR was a correct choice)
+# check if missingness is related to age
+ggplot(obesity_incomplete, aes(x = factor(miss_CVD), y = age)) +
+  geom_boxplot() + labs(x = "Missingness of CVD", 
+                        y = "Age", 
+                        title = "Age vs Missingness in CVD") +
+                        scale_x_discrete(labels = c("Non-missing", "Missing"))
 
-imp = mice(obesity_incomplete, m = 5, method = 'pmm') # predictive mean matching
+odds_age = exp(coef(model)['age'])
+odds_age # for 1 increase of year the odds to get cvd increases by 7.9%
 
- 
-# Regressieanalysis on imputated data
-model_imp = with(imp, glm(miss_CVD ~ medhyper + age + 
-                            sex + current.smoking +
-          alcohol + medstatin + medglucose +bmi,
-          family = binomial))
+# so its plausible to assume that the missingness is due to increase in age
 
-# pool results
-pooled_results= pool(model_imp)
-summary(pooled_results)
- 
+# Just remove the rows with NAs since its 2% of our data missing
 
 ```
 
