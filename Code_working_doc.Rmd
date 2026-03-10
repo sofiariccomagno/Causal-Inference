@@ -35,7 +35,16 @@ obesity <- data %>%
     medhyper == "yes" ~ 1,),
     CVD = case_when(
       CVD == "No" ~ 0,
-      CVD == "Yes" ~ 1,))
+      CVD == "Yes" ~ 1,),
+    medstatin = case_when(
+    medstatin == "no" ~ 0,
+    medstatin == "yes" ~ 1,),
+    medglucose = case_when(
+    medglucose == "no" ~ 0,
+    medglucose == "yes" ~ 1,),
+    current.smoking = case_when(
+      current.smoking == "no" ~ 0,
+      current.smoking == "yes" ~ 1,))
 
 ## Transform variables 
 # Adiposity
@@ -60,6 +69,10 @@ obesity$alcohol <- case_when(obesity$alcohol > 5 ~ 6,
           obesity$alcohol == 2 ~ 2,
           obesity$alcohol == 1 ~ 1,
           obesity$alcohol == 0 ~ 0) 
+
+# SES
+obesity$SES <- ifelse(obesity$income == "low or normal" & obesity$education == "other", 1,
+                      ifelse(obesity$education == "high" & obesity$income == "high", 3, 2))
 
 # Quick look if populations are comparable for pre-treatment covariates
 ## Age
@@ -160,10 +173,21 @@ p8 <- ggplot(obesity, aes(x = factor(medglucose), fill = factor(medhyper))) +
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank())
 
-# Combine plots
-pop_plots <- list(p1, p2, p3, p4, p5, p6, p7, p8)
+p9 <- ggplot(obesity, aes(x = factor(SES), fill = factor(medhyper))) +
+  geom_bar(position = "fill") +
+  labs(x = "SES") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 
-wrap_plots(pop_plots, nrow = 4) +
+# Combine plots
+pop_plots <- list(p1, p2, p3, p4, p5, p6, p7, p8, p9)
+
+wrap_plots(pop_plots, nrow = 3) +
 plot_layout(guides = "collect") &
 theme(legend.position = "bottom")
 
@@ -178,11 +202,11 @@ library(ggplot2)
 
 
 obesity_dag <- dagify(
-  Adiposity ~ Age + Sex,
-  Glucose ~ Age + Sex + Adiposity,
-  BP ~ Age + Sex + Adiposity + Glucose + Smoking + Alcohol,
-  MedHyper ~ BP + Glucose,
-  CVD ~ Age + Sex + Smoking + Alcohol + Adiposity + BP + MedHyper + Glucose,
+  Adiposity ~ Age + Sex + SES,
+  BP ~ Age + Sex + Adiposity + Smoking + Alcohol + SES,
+  MedHyper ~ BP + SES,
+  Smoking ~ Alcohol + SES,
+  CVD ~ Age + Sex + Smoking + Alcohol + Adiposity + BP + MedHyper + SES,
   
   exposure = "MedHyper",
   outcome = "CVD",
@@ -194,7 +218,7 @@ obesity_dag <- dagify(
       Smoking = 2,
       Alcohol = 6,
       Adiposity = 4,
-      Glucose = 4,
+      SES = 4,
       BP = 2,
       MedHyper = 4,
       CVD = 6
@@ -205,11 +229,11 @@ obesity_dag <- dagify(
       Sex = 3,
       Smoking = 1,
       Alcohol = 1,
-      Adiposity = 2.5,
-      Glucose = 2,
-      BP = 1.5,
-      MedHyper = 1.5,
-      CVD = 1.5
+      Adiposity = 3,
+      SES = 2,
+      BP = 2,
+      MedHyper = 1.25,
+      CVD = 2
     )
   )
 )
@@ -243,7 +267,8 @@ ggdag_adjustment_set(
     axis.ticks.x = element_blank(),
     axis.title.y = element_blank(),
     axis.text.y = element_blank(),
-    axis.ticks.y = element_blank()
+    axis.ticks.y = element_blank(),
+    panel.background = element_blank()
     )
 ```
 
@@ -252,33 +277,35 @@ ggdag_adjustment_set(
 ## T-tests
 
 ```{r t-tests}
-t.test(obesity$age ~ obesity$medhyper) #significant
-t.test(obesity$adiposity ~ obesity$medhyper) #significant
+#t.test(obesity$age ~ obesity$medhyper) #significant
+#t.test(obesity$adiposity ~ obesity$medhyper) #significant
 t.test(obesity$MAP ~ obesity$medhyper) #significant
 ```
 
 ## Chi square
 
 ```{r chi square}
-chisq.test(obesity$sex, obesity$medhyper) #significant 
-chisq.test(obesity$current.smoking, obesity$medhyper) #not significant 
-chisq.test(obesity$alcohol, obesity$medhyper) #significant 
-chisq.test(obesity$medstatin, obesity$medhyper) #significant
-chisq.test(obesity$medglucose, obesity$medhyper) #significant 
+#chisq.test(obesity$sex, obesity$medhyper) #significant 
+#chisq.test(obesity$current.smoking, obesity$medhyper) #not significant 
+#chisq.test(obesity$alcohol, obesity$medhyper) #significant 
+#chisq.test(obesity$medstatin, obesity$medhyper) #significant
+#chisq.test(obesity$medglucose, obesity$medhyper) #significant 
+chisq.test(obesity$SES, obesity$medhyper) #significant 
 ```
 
 # Outcome regression
 
 ```{r outcome_regression}
 glm = glm(CVD ~ medhyper + 
-            age + medhyper*age +
-            sex + medhyper*sex +
-            adiposity + medhyper*adiposity + 
+            #age + medhyper*age +
+            #sex + medhyper*sex +
+            #adiposity + medhyper*adiposity + 
             MAP + medhyper*MAP +
-            current.smoking + medhyper*current.smoking +
-            alcohol + current.smoking*alcohol +
-            medstatin +  medhyper*medstatin +
-            medglucose + medhyper*medglucose, 
+            #current.smoking + medhyper*current.smoking +
+            #alcohol + current.smoking*alcohol +
+            #medstatin +  medhyper*medstatin +
+            #medglucose + medhyper*medglucose, 
+            SES + medhyper*SES,
           data = obesity, family = binomial)
 summary(glm)
 ```
@@ -289,14 +316,15 @@ summary(glm)
 
 ```{r g-formula}
 g_model = glm(CVD ~ medhyper + 
-            age + medhyper*age +
-            sex + medhyper*sex +
-            adiposity + medhyper*adiposity + 
+            #age + medhyper*age +
+            #sex + medhyper*sex +
+            #adiposity + medhyper*adiposity + 
             MAP + medhyper*MAP +
-            current.smoking + medhyper*current.smoking +
-            alcohol + current.smoking*alcohol +
-            medstatin +  medhyper*medstatin +
-            medglucose + medhyper*medglucose, 
+            #current.smoking + medhyper*current.smoking +
+            #alcohol + current.smoking*alcohol +
+            #medstatin +  medhyper*medstatin +
+            #medglucose + medhyper*medglucose, 
+            SES + medhyper*SES,
           data = obesity, family = binomial)
 summary(g_model)
 ```
@@ -343,17 +371,17 @@ for (b in 1:B) {
   data_b = obesity[index, ] 
 
   #Refit model
-  g_model_b = glm(CVD ~ medhyper + 
-            age + medhyper*age +
-            sex + medhyper*sex +
-            adiposity + medhyper*adiposity + 
+g_model_b = glm(CVD ~ medhyper + 
+            #age + medhyper*age +
+            #sex + medhyper*sex +
+            #adiposity + medhyper*adiposity + 
             MAP + medhyper*MAP +
-            current.smoking + medhyper*current.smoking +
-            alcohol + current.smoking*alcohol +
-            medstatin +  medhyper*medstatin +
-            medglucose + medhyper*medglucose, 
-          data = data_b, family = binomial)
-
+            #current.smoking + medhyper*current.smoking +
+            #alcohol + current.smoking*alcohol +
+            #medstatin +  medhyper*medstatin +
+            #medglucose + medhyper*medglucose, 
+            SES + medhyper*SES,
+          data = obesity, family = binomial)
   #Predict medhyper = 1
   data1 = data_b
   data1$medhyper = 1
@@ -391,21 +419,7 @@ table(obesity$medglucose, obesity$medhyper)
 ## Visualization
 
 ```{r visualisation}
-par(mfrow=c(1,2)) # Side-by-side plots
-
-# ATE Histogram
-hist(ATE_boot, breaks=20, main="Bootstrap ATE", xlab="Risk Difference", col="gray")
-abline(v = mean(ATE_boot), col="red", lwd=2)
-abline(v = quantile(ATE_boot, c(0.025, 0.975)), col="red", lty=2)
-
-# OR Histogram
-hist(OR_boot, breaks=20, main="Bootstrap OR", xlab="Odds Ratio", col="gray")
-abline(v = mean(OR_boot), col="red", lwd=2)
-abline(v = quantile(OR_boot, c(0.025, 0.975)), col="red", lty=2)
-
-
-
-# alternative with ggplot (can find prettier colours at https://r-charts.com/colors/)
+# Plots (can find prettier colours at https://r-charts.com/colors/)
 boots_df <- data.frame(
   ATE = ATE_boot,
   OR = OR_boot
@@ -503,7 +517,7 @@ bp_model <- lm(SYSBP ~ DIABP, data = obesity_incomplete)
 summary(bp_model)
 
 obesity_incomplete$MAP <- obesity_incomplete$DIABP + (obesity_incomplete$SYSBP - obesity_incomplete$DIABP)/3
-
+dev.off()
 
 #-----------------NA pattern visualization ------------------------------------------------------------------
 
@@ -550,15 +564,139 @@ odds_age # for 1 increase of year the odds to get cvd increases by 7.9%
 ```
 
 
+```{r weighting}
+library(survey)
+library(cobalt)
+# Fit propensity model with all covariates
+propensity_model <- glm(medhyper ~ age + sex + current.smoking + alcohol + medstatin + medglucose + adiposity + 
+                          MAP + SES,
+                        family = binomial, 
+                        data = obesity)
+summary(propensity_model)
+
+# Calculate propensity
+obesity$ps<-fitted.values(propensity_model)
+
+# explore propensity
+summary(obesity$ps)
+
+# histogram
+par(mfrow=c(2,1))
+hist(obesity$ps[obesity$medhyper == 1], xlim=c(0,1),main="MedHyper", xlab="Propensity score")
+hist(obesity$ps[obesity$medhyper == 0], xlim=c(0,1),main="no MedHyper", xlab="Propensity score")
+
+# weights
+obesity$ipw <- ifelse(obesity$medhyper == 1, 1/obesity$ps, 1/(1-obesity$ps)) 
+summary(obesity$ipw)
+
+# check for balance
+variables <- c("age", "sex", "current.smoking", "alcohol", "medstatin", "medglucose", "adiposity", "MAP", "SES")
+covariates <- obesity[, variables]
+bal.tab(covariates, treat = obesity$medhyper, weights = obesity$ipw ,method = "weighting", un=TRUE)
+
+#plot
+love.plot(covariates, treat = obesity$medhyper, weights = obesity$ipw ,method = "weighting",
+          binary = "std", threshold = .1)
+
+# outcome table
+table(obesity$CVD)
+
+
+# weighted mean outcome in the treated
+mean1.ipw <-weighted.mean(obesity$CVD[obesity$medhyper== 1], w=obesity$ipw[obesity$medhyper== 1])
+mean1.ipw
 
 
 
+# weighted mean outcome in the untreated
+mean0.ipw <-weighted.mean(obesity$CVD[obesity$medhyper== 0], w=obesity$ipw[obesity$medhyper== 0])
+mean0.ipw
+
+# estimate of ATE
+mean1.ipw-mean0.ipw
+
+
+d.w <- svydesign(~1, weights = obesity$ipw, data = obesity)
+fit.ipw <- svyglm(CVD ~ medhyper, design = d.w)
+summary(fit.ipw)
+# 95% CI
+confint(fit.ipw)
 
 
 
+# the 99 th percentile is
+ipw2.p99 <-quantile(obesity$ipw,0.99)
+ipw2.p99
+
+obesity$ipw2.trunc <- ifelse(obesity$ipw>ipw2.p99, ipw2.p99, obesity$ipw)
+summary(obesity$ipw2.trunc)
+
+
+# and calculate the ATE with the truncated weights
+
+d.w.trunc <- svydesign(~1, weights = obesity$ipw2.trunc, data = obesity)
+fit.ipw.trunc <- svyglm(CVD ~ medhyper, design = d.w.trunc)
+summary(fit.ipw.trunc)
 
 
 
+# calculate numerator of stabilized weights (Pr(treatment ="RHC"))
+
+numerator.model<-glm(medhyper ~ 1 , family = binomial,  data = obesity)
+
+# Calculate PR(treatment =="RHC")
+medhyper_yes <- fitted.values(numerator.model)
+#stabilized weight
+obesity$ipw2_stab <- ifelse(obesity$medhyper== 1, medhyper_yes/obesity$ps, (1-medhyper_yes)/(1-obesity$ps)) 
+summary(obesity$ipw2_stab)
+```
+
+```{r matching}
+library(MatchIt)
+# 1:1 NN PS matching without replacement
+match.out1 <- matchit(medhyper ~ age + sex + current.smoking + alcohol + medstatin + medglucose + adiposity + 
+                          MAP + SES, data=obesity, method = "nearest", distance = "glm")
+
+match.out1
+
+summary(match.out1)
+
+# w/ caliper and covariates
+match.out2 <- matchit(medhyper ~ age + sex + current.smoking + alcohol + medstatin + medglucose + adiposity + 
+                          MAP + SES, data=obesity, method = "nearest", distance = "glm", caliper = 0.1)
+
+match.out2
+summary(match.out2)
+
+match.data <- match.data(match.out2)
 
 
+table(match.data$medhyper, match.data$CVD) 
+tab<- prop.table(table(match.data$medhyper, match.data$CVD) , margin=1)
+tab
 
+
+# w/ ps
+match.out3 <- matchit(medhyper ~ ps, data=obesity, method = "nearest", distance = "glm")
+summary(match.out3)
+
+match.data <- match.data(match.out3)
+table(match.data$medhyper, match.data$CVD) 
+tab<- prop.table(table(match.data$medhyper, match.data$CVD) , margin=1)
+tab
+```
+
+```{r messy stuff}
+mean_bp <- mean(obesity$MAP)
+propensity_model <- glm(medhyper ~ age + sex + current.smoking + alcohol + medstatin + medglucose + adiposity + SES,
+                        family = binomial, 
+                        data = obesity[obesity$MAP > mean_bp,])
+summary(propensity_model)
+
+propensity_model1 <- glm(medhyper ~ age + sex + current.smoking + alcohol + medstatin + medglucose + adiposity + SES,
+                        family = binomial, 
+                        data = obesity[obesity$MAP < mean_bp,])
+summary(propensity_model1)
+
+
+```
