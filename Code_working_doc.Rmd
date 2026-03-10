@@ -202,10 +202,9 @@ library(ggplot2)
 
 
 obesity_dag <- dagify(
-  Adiposity ~ Age + Sex + SES,
+  Adiposity ~ Age + Sex,
   BP ~ Age + Sex + Adiposity + Smoking + Alcohol + SES,
-  MedHyper ~ BP + SES,
-  Smoking ~ Alcohol + SES,
+  MedHyper ~ BP + SES + Age + Sex + Smoking + Alcohol + Adiposity,
   CVD ~ Age + Sex + Smoking + Alcohol + Adiposity + BP + MedHyper + SES,
   
   exposure = "MedHyper",
@@ -230,9 +229,9 @@ obesity_dag <- dagify(
       Smoking = 1,
       Alcohol = 1,
       Adiposity = 3,
-      SES = 2,
+      SES = 1,
       BP = 2,
-      MedHyper = 1.25,
+      MedHyper = 2.3,
       CVD = 2
     )
   )
@@ -277,17 +276,17 @@ ggdag_adjustment_set(
 ## T-tests
 
 ```{r t-tests}
-#t.test(obesity$age ~ obesity$medhyper) #significant
-#t.test(obesity$adiposity ~ obesity$medhyper) #significant
+t.test(obesity$age ~ obesity$medhyper) #significant
+t.test(obesity$adiposity ~ obesity$medhyper) #significant
 t.test(obesity$MAP ~ obesity$medhyper) #significant
 ```
 
 ## Chi square
 
 ```{r chi square}
-#chisq.test(obesity$sex, obesity$medhyper) #significant 
-#chisq.test(obesity$current.smoking, obesity$medhyper) #not significant 
-#chisq.test(obesity$alcohol, obesity$medhyper) #significant 
+chisq.test(obesity$sex, obesity$medhyper) #significant 
+chisq.test(obesity$current.smoking, obesity$medhyper) #not significant 
+chisq.test(obesity$alcohol, obesity$medhyper) #significant 
 #chisq.test(obesity$medstatin, obesity$medhyper) #significant
 #chisq.test(obesity$medglucose, obesity$medhyper) #significant 
 chisq.test(obesity$SES, obesity$medhyper) #significant 
@@ -297,12 +296,12 @@ chisq.test(obesity$SES, obesity$medhyper) #significant
 
 ```{r outcome_regression}
 glm = glm(CVD ~ medhyper + 
-            #age + medhyper*age +
-            #sex + medhyper*sex +
-            #adiposity + medhyper*adiposity + 
+            age + medhyper*age +
+            sex + medhyper*sex +
+            adiposity + medhyper*adiposity + 
             MAP + medhyper*MAP +
-            #current.smoking + medhyper*current.smoking +
-            #alcohol + current.smoking*alcohol +
+            current.smoking + medhyper*current.smoking +
+            alcohol + current.smoking*alcohol +
             #medstatin +  medhyper*medstatin +
             #medglucose + medhyper*medglucose, 
             SES + medhyper*SES,
@@ -316,12 +315,12 @@ summary(glm)
 
 ```{r g-formula}
 g_model = glm(CVD ~ medhyper + 
-            #age + medhyper*age +
-            #sex + medhyper*sex +
-            #adiposity + medhyper*adiposity + 
+            age + medhyper*age +
+            sex + medhyper*sex +
+            adiposity + medhyper*adiposity + 
             MAP + medhyper*MAP +
-            #current.smoking + medhyper*current.smoking +
-            #alcohol + current.smoking*alcohol +
+            current.smoking + medhyper*current.smoking +
+            alcohol + current.smoking*alcohol +
             #medstatin +  medhyper*medstatin +
             #medglucose + medhyper*medglucose, 
             SES + medhyper*SES,
@@ -568,7 +567,7 @@ odds_age # for 1 increase of year the odds to get cvd increases by 7.9%
 library(survey)
 library(cobalt)
 # Fit propensity model with all covariates
-propensity_model <- glm(medhyper ~ age + sex + current.smoking + alcohol + medstatin + medglucose + adiposity + 
+propensity_model <- glm(medhyper ~ age + sex + current.smoking + alcohol + adiposity + 
                           MAP + SES,
                         family = binomial, 
                         data = obesity)
@@ -590,7 +589,7 @@ obesity$ipw <- ifelse(obesity$medhyper == 1, 1/obesity$ps, 1/(1-obesity$ps))
 summary(obesity$ipw)
 
 # check for balance
-variables <- c("age", "sex", "current.smoking", "alcohol", "medstatin", "medglucose", "adiposity", "MAP", "SES")
+variables <- c("age", "sex", "current.smoking", "alcohol", "adiposity", "MAP", "SES")
 covariates <- obesity[, variables]
 bal.tab(covariates, treat = obesity$medhyper, weights = obesity$ipw ,method = "weighting", un=TRUE)
 
@@ -654,7 +653,7 @@ summary(obesity$ipw2_stab)
 ```{r matching}
 library(MatchIt)
 # 1:1 NN PS matching without replacement
-match.out1 <- matchit(medhyper ~ age + sex + current.smoking + alcohol + medstatin + medglucose + adiposity + 
+match.out1 <- matchit(medhyper ~ age + sex + current.smoking + alcohol + adiposity + 
                           MAP + SES, data=obesity, method = "nearest", distance = "glm")
 
 match.out1
@@ -674,29 +673,5 @@ match.data <- match.data(match.out2)
 table(match.data$medhyper, match.data$CVD) 
 tab<- prop.table(table(match.data$medhyper, match.data$CVD) , margin=1)
 tab
-
-
-# w/ ps
-match.out3 <- matchit(medhyper ~ ps, data=obesity, method = "nearest", distance = "glm")
-summary(match.out3)
-
-match.data <- match.data(match.out3)
-table(match.data$medhyper, match.data$CVD) 
-tab<- prop.table(table(match.data$medhyper, match.data$CVD) , margin=1)
-tab
-```
-
-```{r messy stuff}
-mean_bp <- mean(obesity$MAP)
-propensity_model <- glm(medhyper ~ age + sex + current.smoking + alcohol + medstatin + medglucose + adiposity + SES,
-                        family = binomial, 
-                        data = obesity[obesity$MAP > mean_bp,])
-summary(propensity_model)
-
-propensity_model1 <- glm(medhyper ~ age + sex + current.smoking + alcohol + medstatin + medglucose + adiposity + SES,
-                        family = binomial, 
-                        data = obesity[obesity$MAP < mean_bp,])
-summary(propensity_model1)
-
 
 ```
