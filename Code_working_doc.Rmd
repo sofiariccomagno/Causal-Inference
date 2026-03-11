@@ -74,6 +74,18 @@ obesity$alcohol <- case_when(obesity$alcohol > 5 ~ 6,
 obesity$SES <- ifelse(obesity$income == "low or normal" & obesity$education == "other", 1,
                       ifelse(obesity$education == "high" & obesity$income == "high", 3, 2))
 
+# comorbidities
+obesity = obesity %>% 
+  mutate(comorbidities = case_when(
+    medstatin == 1 & medglucose == 1 ~ "2",
+    medstatin == 1 | medglucose == 1 ~ "1",
+    medstatin == 0 & medglucose == 0 ~ "0"
+  ))
+
+# convert the comorbidities into factor
+obesity$comorbidities = as.factor(obesity$comorbidities)
+
+
 # Quick look if populations are comparable for pre-treatment covariates
 ## Age
 p1 <- ggplot(obesity, aes(x = age, fill = factor(medhyper))) +
