@@ -296,21 +296,70 @@ library(naniar)
 obesity_incomplete <- obesity %>%
   select(-all_of(other_outcomes))
 
-# Mutate to binary 
-obesity_incomplete = obesity_incomplete %>%
-  mutate(medhyper = case_when(
-    medhyper == "no" ~ 0,
-    medhyper == "yes" ~ 1,),
+# Transform variables
+# Mutate existing "yes/no" to binary 
+obesity_incomplete <- obesity_incomplete %>%
+  mutate(
+    medhyper = case_when(
+      medhyper == "no" ~ 0,
+      medhyper == "yes" ~ 1,),
     CVD = case_when(
       CVD == "No" ~ 0,
-      CVD == "Yes" ~ 1,))
+      CVD == "Yes" ~ 1,),
+    medstatin = case_when(
+      medstatin == "no" ~ 0,
+      medstatin == "yes" ~ 1,),
+    medglucose = case_when(
+      medglucose == "no" ~ 0,
+      medglucose == "yes" ~ 1,),
+    current.smoking = case_when(
+      current.smoking == "no" ~ 0,
+      current.smoking == "yes" ~ 1,))
 
-# Transform variables
+## Transform variables
+
 # Adiposity
+# plot(obesity_incomplete$bmi, obesity_incomplete$waist)
+# adiposity_model <- lm(bmi ~ waist, data = obesity_incomplete)
+# summary(adiposity_model)
 obesity_incomplete$adiposity <- scale(obesity_incomplete$bmi) + scale(obesity_incomplete$waist)
 
+# SES
+obesity_incomplete$SES <- ifelse(obesity_incomplete$income == "low or normal" & obesity_incomplete$education == "other", 1,
+                      ifelse(obesity_incomplete$education == "high" & obesity_incomplete$income == "high", 3, 2))
+
 # MAP
-obesity_incomplete$MAP <- obesity_incomplete$DIABP + (obesity_incomplete$SYSBP - obesity_incomplete$DIABP)/3
+# plot(obesity_incomplete$SYSBP, obesity_incomplete$DIABP)
+# bp_model <- lm(SYSBP ~ DIABP, data = obesity_incomplete)
+# summary(bp_model)
+obesity_incomplete <- obesity_incomplete %>%
+  mutate(MAP = DIABP + (SYSBP - DIABP) / 3)
+
+# Alcohol
+# hist(obesity_incomplete$alcohol)
+# table(obesity_incomplete$alcohol)
+obesity_incomplete$alcohol <- case_when(obesity_incomplete$alcohol > 5 ~ 6,
+          obesity_incomplete$alcohol == 5 ~ 5,
+          obesity_incomplete$alcohol == 4 ~ 4,
+          obesity_incomplete$alcohol == 3 ~ 3,
+          obesity_incomplete$alcohol == 2 ~ 2,
+          obesity_incomplete$alcohol == 1 ~ 1,
+          obesity_incomplete$alcohol == 0 ~ 0) 
+# table(obesity_incomplete$alcohol)
+
+# Comorbidities
+obesity_incomplete = obesity_incomplete %>% 
+  mutate(comorbidities = case_when(
+    medstatin == 1 & medglucose == 1 ~ "2",
+    medstatin == 1 | medglucose == 1 ~ "1",
+    medstatin == 0 & medglucose == 0 ~ "0"))
+
+# Make sure categorical variables are factors
+obesity_incomplete <- obesity_incomplete %>%
+  mutate(sex = factor(sex),
+         alcohol = factor(alcohol),
+         SES = factor(SES),
+         comorbidities = factor(comorbidities))
 
 #-----------------NA pattern visualization ---------------
 missing_pattern = md.pattern(obesity_incomplete)
@@ -330,7 +379,7 @@ obesity_incomplete$miss_CVD = is.na(obesity_incomplete$CVD)
 # see if missingness depends on other variables
 model = glm(miss_CVD ~ medhyper + 
             age + sex + adiposity + MAP + current.smoking +
-            alcohol + medstatin + medglucose,
+            alcohol + comorbidities + SES,
             data = obesity_incomplete, family = binomial)
  
 # missingness depends on other variables (age, sex) --> MAR?
@@ -344,7 +393,7 @@ ggplot(obesity_incomplete, aes(x = factor(miss_CVD), y = age)) +
                         scale_x_discrete(labels = c("Non-missing", "Missing"))
 
 odds_age = exp(coef(model)['age'])
-odds_age # For each one-year increase in age, the odds that CVD is missing increase by 7.9%.
+odds_age # For each one-year increase in age, the odds that CVD is missing increase by 8.4%.
 
 # Missingness in CVD appears to be associated with age, suggesting the MCAR assumption is unlikely and that MAR may be more plausible.
 
