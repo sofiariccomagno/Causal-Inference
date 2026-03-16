@@ -1,0 +1,615 @@
+---
+title: "Causal Inference Assignment"
+author: "Group 7"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Libraries
+```{r libraries}
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(ggdag)
+library(dagitty)
+library(survey)
+library(cobalt)
+library(broom)
+```
+
+# Data
+```{r data}
+# Load data
+load("obesity.Rda")
+
+# Remove outcomes not used in the analysis
+other_outcomes <- c("diabetes","MI","angina","stroke","death")
+
+data <- obesity %>%
+  select(-all_of(other_outcomes))
+```
+
+
+# Variables
+```{r variables}
+# Mutate existing "yes/no" to binary 
+data <- data %>%
+  mutate(
+    medhyper = case_when(
+      medhyper == "no" ~ 0,
+      medhyper == "yes" ~ 1,),
+    CVD = case_when(
+      CVD == "No" ~ 0,
+      CVD == "Yes" ~ 1,),
+    medstatin = case_when(
+      medstatin == "no" ~ 0,
+      medstatin == "yes" ~ 1,),
+    medglucose = case_when(
+      medglucose == "no" ~ 0,
+      medglucose == "yes" ~ 1,),
+    current.smoking = case_when(
+      current.smoking == "no" ~ 0,
+      current.smoking == "yes" ~ 1,))
+
+## Transform variables
+
+# Adiposity
+# plot(data$bmi, data$waist)
+# adiposity_model <- lm(bmi ~ waist, data = data)
+# summary(adiposity_model)
+data$adiposity <- scale(data$bmi) + scale(data$waist)
+
+# SES
+data$SES <- ifelse(data$income == "low or normal" & data$education == "other", 1,
+                      ifelse(data$education == "high" & data$income == "high", 3, 2))
+
+# MAP
+# plot(data$SYSBP, data$DIABP)
+# bp_model <- lm(SYSBP ~ DIABP, data = data)
+# summary(bp_model)
+data <- data %>%
+  mutate(MAP = DIABP + (SYSBP - DIABP) / 3)
+
+# Alcohol
+# hist(data$alcohol)
+# table(data$alcohol)
+data$alcohol <- case_when(data$alcohol > 5 ~ 6,
+          data$alcohol == 5 ~ 5,
+          data$alcohol == 4 ~ 4,
+          data$alcohol == 3 ~ 3,
+          data$alcohol == 2 ~ 2,
+          data$alcohol == 1 ~ 1,
+          data$alcohol == 0 ~ 0) 
+# table(data$alcohol)
+
+# Comorbidities
+data = data %>% 
+  mutate(comorbidities = case_when(
+    medstatin == 1 & medglucose == 1 ~ "2",
+    medstatin == 1 | medglucose == 1 ~ "1",
+    medstatin == 0 & medglucose == 0 ~ "0"))
+
+# Make sure categorical variables are factors
+data <- data %>%
+  mutate(sex = factor(sex),
+         alcohol = factor(alcohol),
+         SES = factor(SES),
+         comorbidities = factor(comorbidities))
+```
+
+# Population diagnostic plots
+
+```{r population_plots}
+# Age
+p1 <- ggplot(data, aes(x = age, fill = factor(medhyper))) +
+  geom_density(alpha = 0.5) +
+  labs(x = "Age") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+# Sex
+p2 <- ggplot(data, aes(x = factor(sex), fill = factor(medhyper))) +
+  geom_bar(position = "fill") +
+  labs(x = "Sex") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+
+# Adiposity 
+p3 <- ggplot(data, aes(x = adiposity, fill = factor(medhyper))) +
+  geom_density(alpha = 0.5) +
+  labs(x = "Adiposity") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+
+# MAP
+p4 <- ggplot(data, aes(x = MAP, fill = factor(medhyper))) +
+  geom_density(alpha = 0.5) +
+  labs(x = "MAP") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+# Smoking
+p5 <- ggplot(data, aes(x = factor(current.smoking), fill = factor(medhyper))) +
+  geom_bar(position = "fill") +
+  labs(x = "Smoking") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+# Alcohol
+p6 <- ggplot(data, aes(x = factor(alcohol), fill = factor(medhyper))) +
+  geom_bar(position = "fill") +
+  labs(x = "Alcohol") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+# Comorbidities
+p7 <- ggplot(data, aes(x = factor(comorbidities), fill = factor(medhyper))) +
+  geom_bar(position = "fill") +
+  labs(x = "Comorbidities") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+# SES
+p8 <- ggplot(data, aes(x = factor(SES), fill = factor(medhyper))) +
+  geom_bar(position = "fill") +
+  labs(x = "SES") +
+  scale_fill_manual(
+    name = "MedHyper",
+    values = c("0" = "#F8766D", "1" = "#00BFC4")) +
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+# Combine plots
+pop_plots <- list(p1, p2, p3, p4, p5, p6, p7, p8)
+wrap_plots(pop_plots, nrow = 4) +
+plot_layout(guides = "collect") &
+theme(legend.position = "bottom")
+```
+
+# DAG
+
+```{r dag}
+# Prepare DAG object
+obesity_dag <- dagify(
+  Comorbidities ~ Age + Adiposity,
+  Adiposity ~ Age + Sex + SES,
+  BP ~ Age + Adiposity + Smoking + Alcohol + Comorbidities,
+  MedHyper ~ BP + Age + Adiposity + Comorbidities,
+  CVD ~ Age + Smoking + Sex + Alcohol + Adiposity + BP + MedHyper + SES + Comorbidities,
+  
+  exposure = "MedHyper",
+  outcome = "CVD",
+  
+  coords = list(
+    x = c(
+      Age = 2,
+      Sex = 6,
+      Smoking = 2.5,
+      Alcohol = 5.5,
+      Adiposity = 2.5,
+      SES = 4,
+      BP = 5.5,
+      MedHyper = 2,
+      CVD = 6,
+      Comorbidities = 4
+    ),
+    
+    y = c(
+      Age = 0,
+      Sex = 0,
+      Smoking = 1.5,
+      Alcohol = 1.5,
+      Adiposity = 4,
+      SES = 0,
+      BP = 4,
+      MedHyper = 2.5,
+      CVD = 2.5,
+      Comorbidities = 3
+    )
+  )
+)
+
+# Plot DAG
+ggdag(obesity_dag, text_size = 1.8) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.background = element_blank())
+
+# Find adjustment sets
+adjustmentSets(obesity_dag)
+
+# Plot adjustment sets
+#ggdag_adjustment_set(
+  #obesity_dag,
+  #text = TRUE,
+  #text_size = 1.7) +
+  #theme(
+    #legend.position = "bottom",
+    #legend.text.position = "bottom",
+    #legend.title = element_blank(),
+    #axis.title.x = element_blank(),
+    #axis.text.x = element_blank(),
+    #axis.ticks.x = element_blank(),
+    #axis.title.y = element_blank(),
+    #axis.text.y = element_blank(),
+    #axis.ticks.y = element_blank(),
+    #panel.background = element_blank()
+    #)
+```
+
+
+# Missing Data Analysis
+
+```{r missing_data}
+# (Moving libraries used in this chunk here, because you did not seem too keen on including much of this section)
+library(mice)
+library(VIM)
+library(naniar)
+#------------------Data wrangling on incomplete data-------------------------------------
+obesity_incomplete <- obesity %>%
+  select(-all_of(other_outcomes))
+
+# Mutate to binary 
+obesity_incomplete = obesity_incomplete %>%
+  mutate(medhyper = case_when(
+    medhyper == "no" ~ 0,
+    medhyper == "yes" ~ 1,),
+    CVD = case_when(
+      CVD == "No" ~ 0,
+      CVD == "Yes" ~ 1,))
+
+# Transform variables
+# Adiposity
+obesity_incomplete$adiposity <- scale(obesity_incomplete$bmi) + scale(obesity_incomplete$waist)
+
+# MAP
+obesity_incomplete$MAP <- obesity_incomplete$DIABP + (obesity_incomplete$SYSBP - obesity_incomplete$DIABP)/3
+
+#-----------------NA pattern visualization ---------------
+missing_pattern = md.pattern(obesity_incomplete)
+missing_pattern
+
+aggr(obesity_incomplete, numbers = TRUE, sortVars = TRUE)
+
+# -------------------testing--------------------------------
+#test whether the data is MCAR (apparently you can only do this when data is normally distributed...)
+
+test = mcar_test(obesity_incomplete)
+print(test) # is significant --> not MCAR
+
+# Create missingness indicator
+obesity_incomplete$miss_CVD = is.na(obesity_incomplete$CVD)
+
+# see if missingness depends on other variables
+model = glm(miss_CVD ~ medhyper + 
+            age + sex + adiposity + MAP + current.smoking +
+            alcohol + medstatin + medglucose,
+            data = obesity_incomplete, family = binomial)
+ 
+# missingness depends on other variables (age, sex) --> MAR?
+ summary(model)
+ 
+# check if missingness is related to age
+ggplot(obesity_incomplete, aes(x = factor(miss_CVD), y = age)) +
+  geom_boxplot() + labs(x = "Missingness of CVD", 
+                        y = "Age", 
+                        title = "Age vs Missingness in CVD") +
+                        scale_x_discrete(labels = c("Non-missing", "Missing"))
+
+odds_age = exp(coef(model)['age'])
+odds_age # For each one-year increase in age, the odds that CVD is missing increase by 7.9%.
+
+# Missingness in CVD appears to be associated with age, suggesting the MCAR assumption is unlikely and that MAR may be more plausible.
+
+prop.table(
+  table(obesity_incomplete$medhyper, obesity_incomplete$miss_CVD),
+  margin = 1
+)
+
+# The proportion of missing CVD outcomes was similar between treatment groups, suggesting that missingness of the outcome is unlikely to depend strongly on treatment status. -> supports MAR assumption
+
+# Just remove the rows with NAs since its 2% of our data missing
+
+analysis_data <- data %>%
+  na.omit()
+```
+
+# G-computation
+
+```{r g_computation}
+# Step 1: G-formula
+g_model = glm(CVD ~ medhyper + 
+            age + medhyper*age +
+            adiposity + medhyper*adiposity + 
+            MAP + medhyper*MAP +
+            comorbidities + medhyper*comorbidities,
+            data = analysis_data, family = binomial)
+summary(glm)
+
+# Step 2: simulate what would happen if everyone was treated vs nobody was treated
+
+# Everyone is treated 
+obesity1 = analysis_data
+obesity1$medhyper = 1
+YE1 = predict(g_model, newdata = obesity1, type="response")
+mean_YE1 = mean(YE1, na.rm = T)
+
+# Nobody is treated
+obesity0 = analysis_data
+obesity0$medhyper = 0
+YE0 = predict(g_model, newdata = obesity0, type="response")
+mean_YE0 = mean(YE0, na.rm = T)
+
+# Step 3: ATE + causal odds ratio
+mean_YE1- mean_YE0 #average treatment effect (ATE)
+
+(mean_YE1/(1-mean_YE1))/(mean_YE0/(1-mean_YE0)) #causal odds ratio
+```
+
+## Confidence interval via bootstrap
+```{r ci_boots}
+set.seed(123)
+B = 1000
+ATE_boot = numeric(B)
+OR_boot  = numeric(B)
+
+n = nrow(analysis_data)
+
+for (b in 1:B) {
+
+  #Resample data
+  index = sample(1:n, n, replace = TRUE) 
+  data_b = analysis_data[index, ] 
+
+  #Refit model
+g_model_b = glm(CVD ~ medhyper + 
+            age + medhyper*age +
+            adiposity + medhyper*adiposity + 
+            MAP + medhyper*MAP +
+            comorbidities + medhyper*comorbidities,
+          data = data_b, family = binomial)
+  #Predict medhyper = 1
+  data1 = data_b
+  data1$medhyper = 1
+  p1 = predict(g_model_b, newdata = data1, type="response")
+  m1 = mean(p1, na.rm = T)
+
+  #Predict medhyper = 0
+  data0 = data_b
+  data0$medhyper = 0
+  p0 = predict(g_model_b, newdata = data0, type="response")
+  m0 = mean(p0, na.rm = T)
+
+  #Store estimands
+  ATE_boot[b] = m1 - m0
+  OR_boot[b]  = (m1/(1-m1)) / (m0/(1-m0))
+}
+
+mean(ATE_boot, na.rm = T)
+mean(OR_boot, na.rm = T)
+
+quantile(ATE_boot, c(0.025, 0.975), na.rm = T)
+quantile(OR_boot,  c(0.025, 0.975), na.rm = T)
+
+# Visualisation
+# Plots (can find prettier colours at https://r-charts.com/colors/)
+boots_df <- data.frame(
+  ATE = ATE_boot,
+  OR = OR_boot
+)
+
+ATE_plot <- ggplot(boots_df, aes(x = ATE)) +
+  geom_histogram(bins = 20, fill = "grey85") +
+  labs(title = "Bootstrap ATE",
+       x = "Risk Difference",
+       y = NULL) +
+  geom_vline(
+    aes(xintercept = mean(ATE_boot)),
+    color = "slateblue4", linewidth = 0.5) +
+  geom_vline(
+    aes(xintercept = quantile(ATE_boot, 0.025)),
+    color = "slateblue1", linewidth = 0.5, linetype ="dashed") +
+    geom_vline(
+    aes(xintercept = quantile(ATE_boot, 0.975)),
+    color = "slateblue1", linewidth = 0.5, linetype ="dashed") +
+  theme(panel.background = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        axis.line = element_line(colour = 'black', linewidth = 0.5))
+
+OR_plot <- ggplot(boots_df, aes(x = OR)) +
+  geom_histogram(bins = 20, fill = "grey85") +
+  labs(title = "Bootstrap OR",
+       x = "Odds Ratio",
+       y = NULL) +
+  geom_vline(
+    aes(xintercept = mean(OR_boot)),
+    color = "tomato4", linewidth = 0.5) +
+  geom_vline(
+    aes(xintercept = quantile(OR_boot, 0.025)),
+    color = "tomato1", linewidth = 0.5, linetype ="dashed") +
+    geom_vline(
+    aes(xintercept = quantile(OR_boot, 0.975)),
+    color = "tomato1", linewidth = 0.5, linetype ="dashed") +
+  theme(panel.background = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        axis.line = element_line(colour = 'black', linewidth = 0.5))
+
+wrap_plots(list(ATE_plot, OR_plot))
+```
+
+## Summary G-computation
+```{r summary results}
+# Create a summary data frame
+results_table <- data.frame(
+  Metric = c("Average Treatment Effect (ATE)", "Odds Ratio (OR)"),
+  Estimate = c(mean(ATE_boot, na.rm = TRUE), mean(OR_boot, na.rm = TRUE)),
+  Lower_CI = c(quantile(ATE_boot, 0.025, na.rm = TRUE), quantile(OR_boot, 0.025, na.rm = TRUE)),
+  Upper_CI = c(quantile(ATE_boot, 0.975, na.rm = TRUE), quantile(OR_boot, 0.975, na.rm = TRUE))
+)
+
+# Format for display
+results_table$Formatted <- sprintf("%.3f (95%% CI: %.3f, %.3f)", 
+                                   results_table$Estimate, 
+                                   results_table$Lower_CI, 
+                                   results_table$Upper_CI)
+
+print(results_table[, c("Metric", "Formatted")])
+```
+
+# Propensity Model
+
+```{r prop_score_weight}
+################################### Estimate propensity scores
+propensity_model <- glm(
+  medhyper ~ age + adiposity + MAP + comorbidities,
+  family = binomial,
+  data = analysis_data
+)
+
+summary(propensity_model)
+
+# Add propensity scores to dataset
+analysis_data_with_ps <- propensity_model |>
+  augment(type.predict = "response", data = analysis_data)
+
+# rename for convenience
+analysis_data_with_ps$ps <- analysis_data_with_ps$.fitted
+
+
+##################################### Check for positivity
+ggplot(analysis_data_with_ps, aes(ps, fill = factor(medhyper))) +
+  geom_histogram(bins = 50, position = "identity", alpha = 0.5) +
+  labs(x = "Propensity score", fill = "medhyper")
+
+# Check range of propensity scores
+analysis_data_with_ps |>
+  group_by(medhyper) |>
+  summarise(min_ps = min(ps), max_ps = max(ps))
+
+##################### Calculate stabilized inverse probability weights
+# numerator model for stabilized weights
+numerator_model <- glm(medhyper ~ 1, family = binomial, data = analysis_data_with_ps)
+
+p_treat <- fitted.values(numerator_model)
+
+# stabilized weights
+analysis_data_with_ps$sw <- ifelse(
+  analysis_data_with_ps$medhyper == 1,
+  p_treat / analysis_data_with_ps$ps,
+  (1 - p_treat) / (1 - analysis_data_with_ps$ps)
+)
+
+summary(analysis_data_with_ps$sw)
+
+################### Check extreme weights
+ggplot(analysis_data_with_ps, aes(sw)) +
+  geom_histogram() +
+  scale_x_log10() +
+  labs(x = "Stabilized weights")
+
+# Truncate weights above 99th percentile
+p99 <- quantile(analysis_data_with_ps$sw, 0.99)
+
+analysis_data_with_ps$sw_trunc <- ifelse(
+  analysis_data_with_ps$sw > p99,
+  p99,
+  analysis_data_with_ps$sw
+)
+
+
+##################### Check covariate balance
+variables <- c("age", "adiposity", "MAP", "comorbidities")
+
+covariates <- analysis_data_with_ps[, variables]
+
+# Balance before and after weighting
+bal.tab(
+  covariates,
+  treat = analysis_data_with_ps$medhyper,
+  weights = analysis_data_with_ps$sw_trunc,
+  method = "weighting",
+  un = TRUE
+)
+
+# Love plot
+love.plot(
+  covariates,
+  treat = analysis_data_with_ps$medhyper,
+  weights = analysis_data_with_ps$sw_trunc,
+  threshold = .1
+)
+
+############################# Weighted outcome model
+design_w <- svydesign(
+  ~1,
+  weights = analysis_data_with_ps$sw_trunc,
+  data = analysis_data_with_ps
+)
+
+fit_ipw <- svyglm(CVD ~ medhyper, design = design_w)
+
+summary(fit_ipw)
+confint(fit_ipw)
+
+############################# Estimate ATE
+mean1 <- weighted.mean(
+  analysis_data_with_ps$CVD[analysis_data_with_ps$medhyper == 1],
+  analysis_data_with_ps$sw_trunc[analysis_data_with_ps$medhyper == 1]
+)
+
+mean0 <- weighted.mean(
+  analysis_data_with_ps$CVD[analysis_data_with_ps$medhyper == 0],
+  analysis_data_with_ps$sw_trunc[analysis_data_with_ps$medhyper == 0]
+)
+
+ATE <- mean1 - mean0
+ATE
+```
+
