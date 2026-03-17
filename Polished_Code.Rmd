@@ -18,6 +18,7 @@ library(dagitty)
 library(survey)
 library(cobalt)
 library(broom)
+library(VIM)
 ```
 
 # Data
@@ -36,11 +37,6 @@ data <- obesity %>%
 # Missingness Analysis
 
 ```{r missing_data}
-# (Moving libraries used in this chunk here, because you did not seem too keen on including much of this section)
-library(mice)
-library(VIM)
-library(naniar)
-
 #------------------Data wrangling on incomplete data-------------------------------------
 obesity_incomplete <- obesity %>%
   select(-all_of(other_outcomes))
