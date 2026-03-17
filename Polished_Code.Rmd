@@ -582,6 +582,7 @@ design_w <- svydesign(
 fit_ipw <- svyglm(CVD ~ medhyper, design = design_w)
 
 summary(fit_ipw)
+
 confint(fit_ipw)
 
 ############################# Estimate ATE
@@ -598,4 +599,30 @@ mean0 <- weighted.mean(
 ATE <- mean1 - mean0
 ATE
 ```
+## Summary Propensity
+
+```{r}
+# weighted outcome model
+outcome_table = tidy(fit_ipw, conf.int = TRUE)
+outcome_table
+
+# gives the ATE in table
+ate_table = tibble(
+  mean_treated = mean1,
+  mean_control = mean0,
+  ATE = ATE)
+ate_table
+
+```
+
+
+
+
+
+
+
+
+
+
+
 
