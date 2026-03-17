@@ -33,6 +33,69 @@ data <- obesity %>%
 ```
 
 
+# Missingness Analysis
+
+```{r missing_data}
+# (Moving libraries used in this chunk here, because you did not seem too keen on including much of this section)
+library(mice)
+library(VIM)
+library(naniar)
+
+#------------------Data wrangling on incomplete data-------------------------------------
+obesity_incomplete <- obesity %>%
+  select(-all_of(other_outcomes))
+
+# Transform variables
+# Mutate existing "yes/no" to binary 
+obesity_incomplete <- obesity_incomplete %>%
+  mutate(
+    medhyper = case_when(
+      medhyper == "no" ~ 0,
+      medhyper == "yes" ~ 1,),
+    CVD = case_when(
+      CVD == "No" ~ 0,
+      CVD == "Yes" ~ 1,),
+    medstatin = case_when(
+      medstatin == "no" ~ 0,
+      medstatin == "yes" ~ 1,),
+    medglucose = case_when(
+      medglucose == "no" ~ 0,
+      medglucose == "yes" ~ 1,),
+    current.smoking = case_when(
+      current.smoking == "no" ~ 0,
+      current.smoking == "yes" ~ 1,))
+
+# Make sure categorical variables are factors
+obesity_incomplete <- obesity_incomplete %>%
+  mutate(sex = factor(sex),
+         alcohol = factor(alcohol))
+
+#-----------------NA pattern visualization ---------------
+aggr(obesity_incomplete, numbers = TRUE, sortVars = TRUE)
+
+# -------------------testing--------------------------------
+# Create missingness indicator
+obesity_incomplete$miss_CVD = is.na(obesity_incomplete$CVD)
+
+
+# see if missingness depends on other variables
+model = glm(miss_CVD ~ medhyper + 
+            age + sex + current.smoking +
+            alcohol + bmi + waist + education + income + SYSBP + DIABP + medstatin + medglucose,
+            data = obesity_incomplete, family = binomial)
+ 
+# missingness depends on other variables (age, sex, alcohol, bmi, income) 
+summary(model)
+
+# Missingness in CVD appears to be associated with age, sex, alcohol, bmi, and income, suggesting the MCAR assumption is unlikely and that MAR may be more plausible.
+
+# Just remove the rows with NAs since its 2% of our data missing
+
+data <- data %>%
+  na.omit()
+```
+
+
 # Variables
 ```{r variables}
 # Mutate existing "yes/no" to binary 
@@ -57,9 +120,8 @@ data <- data %>%
 ## Transform variables
 
 # Adiposity
-# plot(data$bmi, data$waist)
-# adiposity_model <- lm(bmi ~ waist, data = data)
-# summary(adiposity_model)
+adiposity_model <- lm(bmi ~ waist, data = data)
+summary(adiposity_model)$coef
 data$adiposity <- scale(data$bmi) + scale(data$waist)
 
 # SES
@@ -67,15 +129,13 @@ data$SES <- ifelse(data$income == "low or normal" & data$education == "other", 1
                       ifelse(data$education == "high" & data$income == "high", 3, 2))
 
 # MAP
-# plot(data$SYSBP, data$DIABP)
-# bp_model <- lm(SYSBP ~ DIABP, data = data)
-# summary(bp_model)
+bp_model <- lm(SYSBP ~ DIABP, data = data)
+summary(bp_model)$coef
 data <- data %>%
   mutate(MAP = DIABP + (SYSBP - DIABP) / 3)
 
 # Alcohol
-# hist(data$alcohol)
-# table(data$alcohol)
+table(data$alcohol)
 data$alcohol <- case_when(data$alcohol > 5 ~ 6,
           data$alcohol == 5 ~ 5,
           data$alcohol == 4 ~ 4,
@@ -83,7 +143,6 @@ data$alcohol <- case_when(data$alcohol > 5 ~ 6,
           data$alcohol == 2 ~ 2,
           data$alcohol == 1 ~ 1,
           data$alcohol == 0 ~ 0) 
-# table(data$alcohol)
 
 # Comorbidities
 data = data %>% 
@@ -98,6 +157,10 @@ data <- data %>%
          alcohol = factor(alcohol),
          SES = factor(SES),
          comorbidities = factor(comorbidities))
+
+# Make adiposity numerical 
+data <- data %>%
+  mutate(adiposity = as.numeric(adiposity))
 ```
 
 # Population diagnostic plots
@@ -266,148 +329,22 @@ ggdag(obesity_dag, text_size = 1.8) +
 adjustmentSets(obesity_dag)
 
 # Plot adjustment sets
-#ggdag_adjustment_set(
-  #obesity_dag,
-  #text = TRUE,
-  #text_size = 1.7) +
-  #theme(
-    #legend.position = "bottom",
-    #legend.text.position = "bottom",
-    #legend.title = element_blank(),
-    #axis.title.x = element_blank(),
-    #axis.text.x = element_blank(),
-    #axis.ticks.x = element_blank(),
-    #axis.title.y = element_blank(),
-    #axis.text.y = element_blank(),
-    #axis.ticks.y = element_blank(),
-    #panel.background = element_blank()
-    #)
-```
-
-
-# Missing Data Analysis
-
-```{r missing_data}
-# (Moving libraries used in this chunk here, because you did not seem too keen on including much of this section)
-library(mice)
-library(VIM)
-library(naniar)
-#------------------Data wrangling on incomplete data-------------------------------------
-obesity_incomplete <- obesity %>%
-  select(-all_of(other_outcomes))
-
-# Transform variables
-# Mutate existing "yes/no" to binary 
-obesity_incomplete <- obesity_incomplete %>%
-  mutate(
-    medhyper = case_when(
-      medhyper == "no" ~ 0,
-      medhyper == "yes" ~ 1,),
-    CVD = case_when(
-      CVD == "No" ~ 0,
-      CVD == "Yes" ~ 1,),
-    medstatin = case_when(
-      medstatin == "no" ~ 0,
-      medstatin == "yes" ~ 1,),
-    medglucose = case_when(
-      medglucose == "no" ~ 0,
-      medglucose == "yes" ~ 1,),
-    current.smoking = case_when(
-      current.smoking == "no" ~ 0,
-      current.smoking == "yes" ~ 1,))
-
-## Transform variables
-
-# Adiposity
-# plot(obesity_incomplete$bmi, obesity_incomplete$waist)
-# adiposity_model <- lm(bmi ~ waist, data = obesity_incomplete)
-# summary(adiposity_model)
-obesity_incomplete$adiposity <- scale(obesity_incomplete$bmi) + scale(obesity_incomplete$waist)
-
-# SES
-obesity_incomplete$SES <- ifelse(obesity_incomplete$income == "low or normal" & obesity_incomplete$education == "other", 1,
-                      ifelse(obesity_incomplete$education == "high" & obesity_incomplete$income == "high", 3, 2))
-
-# MAP
-# plot(obesity_incomplete$SYSBP, obesity_incomplete$DIABP)
-# bp_model <- lm(SYSBP ~ DIABP, data = obesity_incomplete)
-# summary(bp_model)
-obesity_incomplete <- obesity_incomplete %>%
-  mutate(MAP = DIABP + (SYSBP - DIABP) / 3)
-
-# Alcohol
-# hist(obesity_incomplete$alcohol)
-# table(obesity_incomplete$alcohol)
-obesity_incomplete$alcohol <- case_when(obesity_incomplete$alcohol > 5 ~ 6,
-          obesity_incomplete$alcohol == 5 ~ 5,
-          obesity_incomplete$alcohol == 4 ~ 4,
-          obesity_incomplete$alcohol == 3 ~ 3,
-          obesity_incomplete$alcohol == 2 ~ 2,
-          obesity_incomplete$alcohol == 1 ~ 1,
-          obesity_incomplete$alcohol == 0 ~ 0) 
-# table(obesity_incomplete$alcohol)
-
-# Comorbidities
-obesity_incomplete = obesity_incomplete %>% 
-  mutate(comorbidities = case_when(
-    medstatin == 1 & medglucose == 1 ~ "2",
-    medstatin == 1 | medglucose == 1 ~ "1",
-    medstatin == 0 & medglucose == 0 ~ "0"))
-
-# Make sure categorical variables are factors
-obesity_incomplete <- obesity_incomplete %>%
-  mutate(sex = factor(sex),
-         alcohol = factor(alcohol),
-         SES = factor(SES),
-         comorbidities = factor(comorbidities))
-
-#-----------------NA pattern visualization ---------------
-missing_pattern = md.pattern(obesity_incomplete)
-missing_pattern
-
-aggr(obesity_incomplete, numbers = TRUE, sortVars = TRUE)
-
-# -------------------testing--------------------------------
-#test whether the data is MCAR (apparently you can only do this when data is normally distributed...)
-
-test = mcar_test(obesity_incomplete)
-print(test) # is significant --> not MCAR
-
-# Create missingness indicator
-obesity_incomplete$miss_CVD = is.na(obesity_incomplete$CVD)
-
-# see if missingness depends on other variables
-model = glm(miss_CVD ~ medhyper + 
-            age + sex + adiposity + MAP + current.smoking +
-            alcohol + comorbidities + SES,
-            data = obesity_incomplete, family = binomial)
- 
-# missingness depends on other variables (age, sex) --> MAR?
- summary(model)
- 
-# check if missingness is related to age
-ggplot(obesity_incomplete, aes(x = factor(miss_CVD), y = age)) +
-  geom_boxplot() + labs(x = "Missingness of CVD", 
-                        y = "Age", 
-                        title = "Age vs Missingness in CVD") +
-                        scale_x_discrete(labels = c("Non-missing", "Missing"))
-
-odds_age = exp(coef(model)['age'])
-odds_age # For each one-year increase in age, the odds that CVD is missing increase by 8.4%.
-
-# Missingness in CVD appears to be associated with age, suggesting the MCAR assumption is unlikely and that MAR may be more plausible.
-
-prop.table(
-  table(obesity_incomplete$medhyper, obesity_incomplete$miss_CVD),
-  margin = 1
-)
-
-# The proportion of missing CVD outcomes was similar between treatment groups, suggesting that missingness of the outcome is unlikely to depend strongly on treatment status. -> supports MAR assumption
-
-# Just remove the rows with NAs since its 2% of our data missing
-
-analysis_data <- data %>%
-  na.omit()
+ggdag_adjustment_set(
+  obesity_dag,
+  text = TRUE,
+  text_size = 1.7) +
+  theme(
+    legend.position = "bottom",
+    legend.text.position = "bottom",
+    legend.title = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.background = element_blank()
+    )
 ```
 
 # G-computation
@@ -419,19 +356,19 @@ g_model = glm(CVD ~ medhyper +
             adiposity + medhyper*adiposity + 
             MAP + medhyper*MAP +
             comorbidities + medhyper*comorbidities,
-            data = analysis_data, family = binomial)
-summary(glm)
+            data = data, family = binomial)
+summary(g_model)
 
 # Step 2: simulate what would happen if everyone was treated vs nobody was treated
 
 # Everyone is treated 
-obesity1 = analysis_data
+obesity1 = data
 obesity1$medhyper = 1
 YE1 = predict(g_model, newdata = obesity1, type="response")
 mean_YE1 = mean(YE1, na.rm = T)
 
 # Nobody is treated
-obesity0 = analysis_data
+obesity0 = data
 obesity0$medhyper = 0
 YE0 = predict(g_model, newdata = obesity0, type="response")
 mean_YE0 = mean(YE0, na.rm = T)
@@ -449,13 +386,13 @@ B = 1000
 ATE_boot = numeric(B)
 OR_boot  = numeric(B)
 
-n = nrow(analysis_data)
+n = nrow(data)
 
 for (b in 1:B) {
 
   #Resample data
   index = sample(1:n, n, replace = TRUE) 
-  data_b = analysis_data[index, ] 
+  data_b = data[index, ] 
 
   #Refit model
 g_model_b = glm(CVD ~ medhyper + 
@@ -559,70 +496,70 @@ print(results_table[, c("Metric", "Formatted")])
 propensity_model <- glm(
   medhyper ~ age + adiposity + MAP + comorbidities,
   family = binomial,
-  data = analysis_data
+  data = data
 )
 
 summary(propensity_model)
 
 # Add propensity scores to dataset
-analysis_data_with_ps <- propensity_model |>
-  augment(type.predict = "response", data = analysis_data)
+data_with_ps <- propensity_model |>
+  augment(type.predict = "response", data = data)
 
 # rename for convenience
-analysis_data_with_ps$ps <- analysis_data_with_ps$.fitted
+data_with_ps$ps <- data_with_ps$.fitted
 
 
 ##################################### Check for positivity
-ggplot(analysis_data_with_ps, aes(ps, fill = factor(medhyper))) +
+ggplot(data_with_ps, aes(ps, fill = factor(medhyper))) +
   geom_histogram(bins = 50, position = "identity", alpha = 0.5) +
   labs(x = "Propensity score", fill = "medhyper")
 
 # Check range of propensity scores
-analysis_data_with_ps |>
+data_with_ps |>
   group_by(medhyper) |>
   summarise(min_ps = min(ps), max_ps = max(ps))
 
 ##################### Calculate stabilized inverse probability weights
 # numerator model for stabilized weights
-numerator_model <- glm(medhyper ~ 1, family = binomial, data = analysis_data_with_ps)
+numerator_model <- glm(medhyper ~ 1, family = binomial, data = data_with_ps)
 
 p_treat <- fitted.values(numerator_model)
 
 # stabilized weights
-analysis_data_with_ps$sw <- ifelse(
-  analysis_data_with_ps$medhyper == 1,
-  p_treat / analysis_data_with_ps$ps,
-  (1 - p_treat) / (1 - analysis_data_with_ps$ps)
+data_with_ps$sw <- ifelse(
+  data_with_ps$medhyper == 1,
+  p_treat / data_with_ps$ps,
+  (1 - p_treat) / (1 - data_with_ps$ps)
 )
 
-summary(analysis_data_with_ps$sw)
+summary(data_with_ps$sw)
 
 ################### Check extreme weights
-ggplot(analysis_data_with_ps, aes(sw)) +
+ggplot(data_with_ps, aes(sw)) +
   geom_histogram() +
   scale_x_log10() +
   labs(x = "Stabilized weights")
 
 # Truncate weights above 99th percentile
-p99 <- quantile(analysis_data_with_ps$sw, 0.99)
+p99 <- quantile(data_with_ps$sw, 0.99)
 
-analysis_data_with_ps$sw_trunc <- ifelse(
-  analysis_data_with_ps$sw > p99,
+data_with_ps$sw_trunc <- ifelse(
+  data_with_ps$sw > p99,
   p99,
-  analysis_data_with_ps$sw
+  data_with_ps$sw
 )
 
 
 ##################### Check covariate balance
 variables <- c("age", "adiposity", "MAP", "comorbidities")
 
-covariates <- analysis_data_with_ps[, variables]
+covariates <- data_with_ps[, variables]
 
 # Balance before and after weighting
 bal.tab(
   covariates,
-  treat = analysis_data_with_ps$medhyper,
-  weights = analysis_data_with_ps$sw_trunc,
+  treat = data_with_ps$medhyper,
+  weights = data_with_ps$sw_trunc,
   method = "weighting",
   un = TRUE
 )
@@ -630,16 +567,16 @@ bal.tab(
 # Love plot
 love.plot(
   covariates,
-  treat = analysis_data_with_ps$medhyper,
-  weights = analysis_data_with_ps$sw_trunc,
+  treat = data_with_ps$medhyper,
+  weights = data_with_ps$sw_trunc,
   threshold = .1
 )
 
 ############################# Weighted outcome model
 design_w <- svydesign(
   ~1,
-  weights = analysis_data_with_ps$sw_trunc,
-  data = analysis_data_with_ps
+  weights = data_with_ps$sw_trunc,
+  data = data_with_ps
 )
 
 fit_ipw <- svyglm(CVD ~ medhyper, design = design_w)
@@ -649,13 +586,13 @@ confint(fit_ipw)
 
 ############################# Estimate ATE
 mean1 <- weighted.mean(
-  analysis_data_with_ps$CVD[analysis_data_with_ps$medhyper == 1],
-  analysis_data_with_ps$sw_trunc[analysis_data_with_ps$medhyper == 1]
+  data_with_ps$CVD[data_with_ps$medhyper == 1],
+  data_with_ps$sw_trunc[data_with_ps$medhyper == 1]
 )
 
 mean0 <- weighted.mean(
-  analysis_data_with_ps$CVD[analysis_data_with_ps$medhyper == 0],
-  analysis_data_with_ps$sw_trunc[analysis_data_with_ps$medhyper == 0]
+  data_with_ps$CVD[data_with_ps$medhyper == 0],
+  data_with_ps$sw_trunc[data_with_ps$medhyper == 0]
 )
 
 ATE <- mean1 - mean0
