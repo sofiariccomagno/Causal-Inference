@@ -18,6 +18,9 @@ library(dagitty)
 library(survey)
 library(cobalt)
 library(broom)
+library(mice)
+library(VIM)
+library(naniar)
 ```
 
 # Data
@@ -36,61 +39,42 @@ data <- obesity %>%
 # Missingness Analysis
 
 ```{r missing_data}
-# (Moving libraries used in this chunk here, because you did not seem too keen on including much of this section)
-library(mice)
-library(VIM)
-library(naniar)
+sum(is.na(data))
+sum(is.na(data))/nrow(data) #Only 2.6% of our observations contain missing values
 
-#------------------Data wrangling on incomplete data-------------------------------------
-obesity_incomplete <- obesity %>%
-  select(-all_of(other_outcomes))
+test = mcar_test(data) #the data is NOT MCAR (likely MAR or MNAR)
 
-# Transform variables
-# Mutate existing "yes/no" to binary 
-obesity_incomplete <- obesity_incomplete %>%
-  mutate(
-    medhyper = case_when(
-      medhyper == "no" ~ 0,
-      medhyper == "yes" ~ 1,),
-    CVD = case_when(
-      CVD == "No" ~ 0,
-      CVD == "Yes" ~ 1,),
-    medstatin = case_when(
-      medstatin == "no" ~ 0,
-      medstatin == "yes" ~ 1,),
-    medglucose = case_when(
-      medglucose == "no" ~ 0,
-      medglucose == "yes" ~ 1,),
-    current.smoking = case_when(
-      current.smoking == "no" ~ 0,
-      current.smoking == "yes" ~ 1,))
+##Visualizing Missing values 
+aggr(data, numbers = TRUE, sortVars = TRUE)
 
-# Make sure categorical variables are factors
-obesity_incomplete <- obesity_incomplete %>%
-  mutate(sex = factor(sex),
-         alcohol = factor(alcohol))
+##Checking weather the pattern in missing data can be explained by the observed data 
+which(colSums(is.na(data)) > 0)
+var_na = c(5, 6, 7, 8, 9, 10, 11, 15)
+MAR_check = list()
+MAR = list()
 
-#-----------------NA pattern visualization ---------------
-aggr(obesity_incomplete, numbers = TRUE, sortVars = TRUE)
+for (var in var_na) {
+  target_missing = as.numeric(is.na(data[[var]]))
 
-# -------------------testing--------------------------------
-# Create missingness indicator
-obesity_incomplete$miss_CVD = is.na(obesity_incomplete$CVD)
+  all_cols = 2:ncol(data)
+  predictor_cols = all_cols[all_cols != var]
+  
+  individual_p_vals = numeric()
+  
+  for (pred in predictor_cols) {
+    model = glm(target_missing ~ data[[pred]], family = binomial)
+    p_val = summary(model)$coefficients[2, 4]
+    
+    names(p_val) = colnames(data)[pred]
+    individual_p_vals = c(individual_p_vals, p_val)
+  }
 
+  MAR_check[[colnames(data)[var]]] = individual_p_vals
+  MAR[[colnames(data)[var]]] = any(individual_p_vals < 0.05)
+}
+MAR
 
-# see if missingness depends on other variables
-model = glm(miss_CVD ~ medhyper + 
-            age + sex + current.smoking +
-            alcohol + bmi + waist + education + income + SYSBP + DIABP + medstatin + medglucose,
-            data = obesity_incomplete, family = binomial)
- 
-# missingness depends on other variables (age, sex, alcohol, bmi, income) 
-summary(model)
-
-# Missingness in CVD appears to be associated with age, sex, alcohol, bmi, and income, suggesting the MCAR assumption is unlikely and that MAR may be more plausible.
-
-# Just remove the rows with NAs since its 2% of our data missing
-
+#Complete-Case analysis
 data <- data %>%
   na.omit()
 ```
@@ -120,8 +104,7 @@ data <- data %>%
 ## Transform variables
 
 # Adiposity
-adiposity_model <- lm(bmi ~ waist, data = data)
-summary(adiposity_model)$coef
+cor.test(data$bmi, data$waist, method = "pearson") # highly positively correlated
 data$adiposity <- scale(data$bmi) + scale(data$waist)
 
 # SES
@@ -129,8 +112,7 @@ data$SES <- ifelse(data$income == "low or normal" & data$education == "other", 1
                       ifelse(data$education == "high" & data$income == "high", 3, 2))
 
 # MAP
-bp_model <- lm(SYSBP ~ DIABP, data = data)
-summary(bp_model)$coef
+cor.test(data$SYSBP, data$DIABP, method = "pearson") # highly positively correlated
 data <- data %>%
   mutate(MAP = DIABP + (SYSBP - DIABP) / 3)
 
@@ -278,9 +260,9 @@ theme(legend.position = "bottom")
 obesity_dag <- dagify(
   Comorbidities ~ Age + Adiposity,
   Adiposity ~ Age + Sex + SES,
-  BP ~ Age + Adiposity + Smoking + Alcohol + Comorbidities,
-  MedHyper ~ BP + Age + Adiposity + Comorbidities,
-  CVD ~ Age + Smoking + Sex + Alcohol + Adiposity + BP + MedHyper + SES + Comorbidities,
+  MAP ~ Age + Adiposity + Smoking + Alcohol + Comorbidities,
+  MedHyper ~ MAP + Age + Adiposity + Comorbidities,
+  CVD ~ Age + Smoking + Sex + Alcohol + Adiposity + MAP + MedHyper + SES + Comorbidities,
   
   exposure = "MedHyper",
   outcome = "CVD",
@@ -293,7 +275,7 @@ obesity_dag <- dagify(
       Alcohol = 5.5,
       Adiposity = 2.5,
       SES = 4,
-      BP = 5.5,
+      MAP = 5.5,
       MedHyper = 2,
       CVD = 6,
       Comorbidities = 4
@@ -306,7 +288,7 @@ obesity_dag <- dagify(
       Alcohol = 1.5,
       Adiposity = 4,
       SES = 0,
-      BP = 4,
+      MAP = 4,
       MedHyper = 2.5,
       CVD = 2.5,
       Comorbidities = 3
@@ -333,6 +315,7 @@ ggdag_adjustment_set(
   obesity_dag,
   text = TRUE,
   text_size = 1.7) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
   theme(
     legend.position = "bottom",
     legend.text.position = "bottom",
@@ -548,7 +531,6 @@ data_with_ps$sw_trunc <- ifelse(
   p99,
   data_with_ps$sw
 )
-
 
 ##################### Check covariate balance
 variables <- c("age", "adiposity", "MAP", "comorbidities")
