@@ -116,8 +116,7 @@ data <- data %>%
 ## Transform variables
 
 # Adiposity
-adiposity_model <- lm(bmi ~ waist, data = data)
-summary(adiposity_model)$coef
+cor.test(data$bmi, data$waist, method = "pearson") # highly positively correlated
 data$adiposity <- scale(data$bmi) + scale(data$waist)
 
 # SES
@@ -125,8 +124,7 @@ data$SES <- ifelse(data$income == "low or normal" & data$education == "other", 1
                       ifelse(data$education == "high" & data$income == "high", 3, 2))
 
 # MAP
-bp_model <- lm(SYSBP ~ DIABP, data = data)
-summary(bp_model)$coef
+cor.test(data$SYSBP, data$DIABP, method = "pearson") # highly positively correlated
 data <- data %>%
   mutate(MAP = DIABP + (SYSBP - DIABP) / 3)
 
