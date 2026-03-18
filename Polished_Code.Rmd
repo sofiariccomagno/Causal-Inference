@@ -45,7 +45,19 @@ sum(is.na(data))/nrow(data) #Only 2.6% of our observations contain missing value
 test = mcar_test(data) #the data is NOT MCAR (likely MAR or MNAR)
 
 ##Visualizing Missing values 
-aggr(data, numbers = TRUE, sortVars = TRUE)
+na_counts = colSums(is.na(data))
+na_counts = na_counts[na_counts > 0]
+na_counts = sort(na_counts, decreasing = TRUE)
+na_props = na_counts / nrow(data)
+ymax = max(na_props) * 1.2  
+
+barplot(na_props,
+        main = "NAs (proportions) for each variable",
+        xlab = "",
+        ylab = "",
+        col = "magenta",
+        las = 2,       
+        ylim = c(0, ymax))
 
 ##Checking weather the pattern in missing data can be explained by the observed data 
 which(colSums(is.na(data)) > 0)
