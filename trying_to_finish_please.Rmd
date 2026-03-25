@@ -56,8 +56,20 @@ data <- obesity %>%
 sum(is.na(data))
 sum(is.na(data))/nrow(data) # 2.6% of our observations contain missing values
 
-# Visualise missingness across variables
-aggr(data, numbers = TRUE, sortVars = TRUE)
+##Visualizing Missing values 
+na_counts = colSums(is.na(data))
+na_counts = na_counts[na_counts > 0]
+na_counts = sort(na_counts, decreasing = TRUE)
+na_props = na_counts / nrow(data)
+ymax = max(na_props) * 1.2  
+
+barplot(na_props,
+        main = "NAs (proportions) for each variable",
+        xlab = "",
+        ylab = "",
+        col = "magenta",
+        las = 2,       
+        ylim = c(0, ymax))
 
 # Test for MCAR
 mcar_test(data) # p-value is significant -> the data is NOT MCAR (likely MAR or MNAR)
@@ -757,7 +769,7 @@ print(results_table[, c("Metric", "Formatted")])
 ```{r prop_score_weight}
 # Estimate propensity scores
 propensity_model <- glm(
-  medhyper ~ MAP + age + sex + comorbidities + alcohol + adiposity,
+  medhyper ~ MAP + age + sex + comorbidities +  adiposity + current.smoking,
   family = binomial,
   data = data
 )
@@ -874,6 +886,12 @@ ate_ci <- confint(fit_ipw)["medhyper", ]
 
 ## Summary of Propensity Score Methods
 ```{r summary_propensity}
+#Summary table of the weighted propensity model
+
+outcome_table = tidy(fit_ipw, conf.int = F)
+outcome_table
+
+
 # exponentiate the logit coefficients to get true Odds Ratios
 or_est <- exp(coef(fit_ipw)["medhyper"])
 or_ci  <- exp(confint(fit_ipw)["medhyper", ])
@@ -894,3 +912,5 @@ results_ipw$Formatted <- sprintf("%.3f (95%% CI: %.3f, %.3f)",
 
 print(results_ipw[, c("Metric", "Formatted")])
 ```
+
+
