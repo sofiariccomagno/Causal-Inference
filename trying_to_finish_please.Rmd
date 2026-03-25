@@ -11,25 +11,32 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.align = "center")
 ```
 
 # Libraries
 ```{r libraries}
+# Data manipulation and visualization
 library(dplyr)
 library(ggplot2)
 library(patchwork)
+
+# DAGs
 library(ggdag)
 library(dagitty)
-library(survey)
-library(cobalt)
-library(broom)
+
+# Missing data
 library(mice)
 library(VIM)
 library(naniar)
+
+# Propensity scores
+library(survey)
+library(cobalt)
+library(broom)
 ```
 
-# Data
+# Data Loading
 ```{r data}
 # Load data
 load("obesity.Rda")
@@ -45,15 +52,17 @@ data <- obesity %>%
 # Missingness Analysis
 
 ```{r missing_data}
+# Check overall missingness
 sum(is.na(data))
-sum(is.na(data))/nrow(data) #Only 2.6% of our observations contain missing values
+sum(is.na(data))/nrow(data) # 2.6% of our observations contain missing values
 
-test = mcar_test(data) #the data is NOT MCAR (likely MAR or MNAR)
-
-##Visualizing Missing values 
+# Visualise missingness across variables
 aggr(data, numbers = TRUE, sortVars = TRUE)
 
-##Checking weather the pattern in missing data can be explained by the observed data 
+# Test for MCAR
+mcar_test(data) # p-value is significant -> the data is NOT MCAR (likely MAR or MNAR)
+
+# Investigate MAR assumption
 which(colSums(is.na(data)) > 0)
 var_na = c(5, 6, 7, 8, 9, 10, 11, 15)
 MAR_check = list()
@@ -78,15 +87,18 @@ for (var in var_na) {
   MAR_check[[colnames(data)[var]]] = individual_p_vals
   MAR[[colnames(data)[var]]] = any(individual_p_vals < 0.05)
 }
-MAR
 
-#Complete-Case analysis
+MAR # Because the missingness can be explained by observes variables, the MAR assumption is not disproven.
+
+# Drop NAs 
 data <- data %>%
   na.omit()
 ```
 
+Since our MAR assumption is not disproven and only 2.6% of our observations are missing, we will use complete case analysis to simplicity's sake.
 
-# Variables
+# Variable Transformations
+
 ```{r variables}
 # Mutate existing "yes/no" to binary 
 data <- data %>%
@@ -105,7 +117,7 @@ data <- data %>%
       medglucose == "yes" ~ 1,),
     current.smoking = case_when(
       current.smoking == "no" ~ 0,
-      current.smoking == "yes" ~ 1,))
+      current.smoking == "yes" ~ 1))
 
 ## Transform variables
 
@@ -122,7 +134,6 @@ cor.test(data$SYSBP, data$DIABP, method = "pearson") # highly positively correla
 data <- data %>%
   mutate(MAP = DIABP + (SYSBP - DIABP) / 3)
 
-# Alcohol
 # Alcohol
 table(data$alcohol)
 data$alcohol <- cut(data$alcohol,
@@ -258,6 +269,7 @@ theme(legend.position = "bottom")
 
 # DAG
 ## Postulated DAG
+We start by postulating a DAG given literature-backed expert knowledge, which should comprehensively include all causal pathways between our covariates.
 ```{r postulated_dag}
 obesity_dag <- dagify(
   comorbidities ~ age + adiposity + sex,
@@ -308,12 +320,15 @@ ggdag(obesity_dag, text_size = 1.8) +
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
     panel.background = element_blank())
+```
 
-## Quite a lot of arrows, see if any are prunable by testing via local test
 
-# Social factors
+## DAG pruning
+As we used a very conservative approach when postulating our DAG, we see if any causal pathways are actually mediated by other variables rather than have direct links. We will make assumptions and test implied conditional dependencies to see if the data we have supports those assumptions. If supported, those causal pathways will be removed from the final DAG.
 
-# assume that SES->medhyper, smoking->medhyper, and alcohol->medhyper might be mediated through MAP, try remove them and run local test
+### Social factors to medhyper
+We assume that the effects of socio-economic status (SES), alcohol and smoking status on antihypertensive medications might be fully mediated by mean arterial blood pressure (MAP).
+```{r dag_pruning_social_medhyper}
 pruned_dag <- dagify(
   comorbidities ~ age + adiposity + sex,
   adiposity ~ sex + SES,
@@ -352,19 +367,19 @@ pruned_dag <- dagify(
     )
   )
 )
-
+# Run local tests to see if data supports assumptions
 r <- localTests(pruned_dag, data, type = "cis.pillai")
-## Retain only those tests with adjusted p-value < .05
+# Retain only those tests with adjusted p-value < .05
 r <- r[p.adjust(r$p.value) < 0.05, ]
 r
+```
+The data we have supports the assumption that SES and smoking status are mediated via other variables, we therefore are able to prune those arrows. However, we also found that the relationship between alcohol and medhyper is significant, we therefore retain that causal pathway in our DAG.
 
-# data supports that SES->medhyper and smoking ->medhyper can be pruned, however alcohol ->medhyper is significant
 
+### Biological factors to medhyper
+We assume that adiposity may not be directly linked to medhyper but could be mediated via MAP or comorbidities.
 
-####### Biological factors
-
-# try pruning adiposity->medhyper (because adiposity->map) 
-
+```{r pruning_bio_medhyper}
 pruned_dag <- dagify(
   comorbidities ~ age + adiposity + sex,
   adiposity ~ sex + SES,
@@ -408,66 +423,12 @@ r <- localTests(pruned_dag, data, type = "cis.pillai")
 ## Retain only those tests with adjusted p-value < .05
 r <- r[p.adjust(r$p.value) < 0.05, ] 
 r
+```
+As the data does not support the assumption that the causal effect of adiposity is entirely mediated via other variables, we retain the arrow in our final DAG.
 
-# do not prune adiposity->medhyper 
-
-
-
-
-## test arrows into CVD
-# Biological factors
-
-# age and sex might not be a direct causes for CVD but instead be dependent on comorbidity, bp and adiposity, try pruning age->CVD and sex->CVD
-
-pruned_dag <- dagify(
-  comorbidities ~ age + adiposity + sex,
-  adiposity ~ sex + SES,
-  MAP ~ age + sex + adiposity + current.smoking + alcohol + SES,
-  medhyper ~ MAP + age + sex + comorbidities + alcohol + adiposity,
-  CVD ~  current.smoking + alcohol + adiposity + MAP + medhyper + SES + comorbidities,
-  
-  exposure = "medhyper",
-  outcome = "CVD",
-  
-  coords = list(
-    x = c(
-      age = 2,
-      sex = 6,
-      current.smoking = 2.5,
-      alcohol = 5.5,
-      adiposity = 2.5,
-      SES = 4,
-      MAP = 5.5,
-      medhyper = 2,
-      CVD = 6,
-      comorbidities = 4
-    ),
-    
-    y = c(
-      age = 5,
-      sex = 5,
-      current.smoking = 1,
-      alcohol = 1,
-      adiposity = 4,
-      SES = 0,
-      MAP = 4,
-      medhyper = 2.5,
-      CVD = 2.5,
-      comorbidities = 3
-    )
-  )
-)
-
-r <- localTests(pruned_dag, data, type = "cis.pillai")
-## Retain only those tests with adjusted p-value < .05
-r <- r[p.adjust(r$p.value) < 0.05, ] 
-r 
-
-# Data does not support the pruning of age->cvd and sex->cvd
-
-## Social factors
-# SES, smoking, alcohol might not be a direct causes for CVD but instead be dependent on comorbidity, MAP and adiposity, try pruning SES->CVD and smoking->CVD, alcohol->CVD
-
+### Social factors on CVD
+SES, smoking, alcohol might not be a direct causes for CVD but instead be dependent on comorbidity, MAP and adiposity.
+```{r pruning_social_CVD}
 pruned_dag <- dagify(
   comorbidities ~ age + adiposity + sex,
   adiposity ~ sex + SES,
@@ -513,12 +474,19 @@ r <- r[p.adjust(r$p.value) < 0.05, ]
 r 
 
 # data supports removing SES->CVD and alcohol->CVD, but not smoking -> CVD
+```
+The data we have supports the assumptions that SES and alcohol are mediated via other variables, we therefore prune those causal pathways, while retaining smoking status.
+
+
+### Biological factors on CVD
+We assume that age and sex may not be direct causes for CVD but may be mediated by comorbidity, MAP and adiposity.
+```{r pruning_bio_CVD}
 pruned_dag <- dagify(
   comorbidities ~ age + adiposity + sex,
   adiposity ~ sex + SES,
   MAP ~ age + sex + adiposity + current.smoking + alcohol + SES,
   medhyper ~ MAP + age + sex + comorbidities + alcohol + adiposity,
-  CVD ~ age + sex + adiposity + MAP + medhyper + comorbidities + current.smoking,
+  CVD ~ adiposity + MAP + medhyper + comorbidities + current.smoking,
   
   exposure = "medhyper",
   outcome = "CVD",
@@ -556,23 +524,8 @@ r <- localTests(pruned_dag, data, type = "cis.pillai")
 ## Retain only those tests with adjusted p-value < .05
 r <- r[p.adjust(r$p.value) < 0.05, ] 
 r 
-
-ggdag(pruned_dag, text_size = 1.8) +
-  theme(
-    axis.title.x = element_blank(),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.title.y = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    panel.background = element_blank())
-# all important factors for medhyper and CVD should be accounted for by this dag
 ```
-
-
-
-
-
+As the data does not support the assumption that the causal effect of age and sex are entirely mediated via other variables, we therefore retain the arrow in our final DAG.
 
 
 ## Final DAG
@@ -650,11 +603,12 @@ ggdag_adjustment_set(
     axis.ticks.y = element_blank(),
     panel.background = element_blank()
     )
-
-# since alcohol was a transformed variable, the adjustment set containing smoking is probably safer to use
 ```
 
+Since we have two adjustment sets available, one with alcohol and one with smoking status, we chose to use the smoking status one, as the alcohol variable was transformed and therefore less reliable since more assumptions would be implied.
+
 # G-computation
+Based on our DAG, our adjustment set includes age, sex, adiposity, MAP, comorbidities, and current smoking. We fit a logistic regression model for our outcome (CVD), including interaction terms between the treatment (medhyper) and all covariates to allow the treatment effect to vary across different patient profiles.
 
 ```{r g_computation}
 # Step 1: G-formula
@@ -689,6 +643,7 @@ mean_YE1- mean_YE0 #average treatment effect (ATE)
 ```
 
 ## Confidence interval via bootstrap
+To quantify the uncertainty of our estimates and calculate the 95% Confidence Intervals, we use non-parametric bootstrapping.
 ```{r ci_boots}
 set.seed(123)
 B = 1000
@@ -734,7 +689,6 @@ quantile(ATE_boot, c(0.025, 0.975), na.rm = T)
 quantile(OR_boot,  c(0.025, 0.975), na.rm = T)
 
 # Visualisation
-# Plots (can find prettier colours at https://r-charts.com/colors/)
 boots_df <- data.frame(
   ATE = ATE_boot,
   OR = OR_boot
@@ -799,15 +753,14 @@ print(results_table[, c("Metric", "Formatted")])
 ```
 
 # Propensity Model
-
+## Propensity Score Weighting (IPW)
 ```{r prop_score_weight}
-################################### Estimate propensity scores
+# Estimate propensity scores
 propensity_model <- glm(
   medhyper ~ MAP + age + sex + comorbidities + alcohol + adiposity,
   family = binomial,
   data = data
 )
-
 summary(propensity_model)
 
 # Add propensity scores to dataset
@@ -817,8 +770,12 @@ data_with_ps <- propensity_model |>
 # rename for convenience
 data_with_ps$ps <- data_with_ps$.fitted
 
+```
 
-##################################### Check for positivity
+## Positivity check
+
+```{r positivity_check}
+# Histogram
 ggplot(data_with_ps, aes(ps, fill = factor(medhyper))) +
   geom_histogram(bins = 50, position = "identity", alpha = 0.5) +
   labs(x = "Propensity score", fill = "medhyper")
@@ -827,14 +784,18 @@ ggplot(data_with_ps, aes(ps, fill = factor(medhyper))) +
 data_with_ps |>
   group_by(medhyper) |>
   summarise(min_ps = min(ps), max_ps = max(ps))
+```
+The histograms and range show adequate overlap between treatment status.
 
-##################### Calculate stabilized inverse probability weights
-# numerator model for stabilized weights
+## Stabilised weights
+To reduce the effect of extreme weights, we decide to use stabilised weights instead.
+```{r stabilitsed weights}
+# Numerator model for stabilized weights (marginal probability of treatment)
 numerator_model <- glm(medhyper ~ 1, family = binomial, data = data_with_ps)
 
 p_treat <- fitted.values(numerator_model)
 
-# stabilized weights
+# Stabilized weights
 data_with_ps$sw <- ifelse(
   data_with_ps$medhyper == 1,
   p_treat / data_with_ps$ps,
@@ -843,13 +804,16 @@ data_with_ps$sw <- ifelse(
 
 summary(data_with_ps$sw)
 
-################### Check extreme weights
+# Check for extreme weights
 ggplot(data_with_ps, aes(sw)) +
   geom_histogram() +
-  scale_x_log10() +
   labs(x = "Stabilized weights")
+```
+We see that we have some extreme weights. To mitigate this issue further, we decide to truncate above the 99th percentile.
 
-# Truncate weights above 99th percentile
+
+## Truncated weights
+```{r truncated weights}
 p99 <- quantile(data_with_ps$sw, 0.99)
 
 data_with_ps$sw_trunc <- ifelse(
@@ -857,10 +821,12 @@ data_with_ps$sw_trunc <- ifelse(
   p99,
   data_with_ps$sw
 )
+summary(data_with_ps$sw_trunc)
+```
 
-##################### Check covariate balance
-variables <- c("MAP", "age", "sex", "comorbidities", "alcohol", "adiposity")
-
+```{r exchangeability}
+# Check covariate balance
+variables <- c("MAP", "age", "sex", "comorbidities", "current.smoking", "adiposity")
 covariates <- data_with_ps[, variables]
 
 # Balance before and after weighting
@@ -879,31 +845,52 @@ love.plot(
   weights = data_with_ps$sw_trunc,
   threshold = .1
 )
+```
+The Love plot confirms that the standardised mean difference for all covariates now fallws below the usual threshold of 0.1, meaning that our exchangeability assumption is satisfied.
 
-############################# Weighted outcome model
+## Weighted Outcome Model
+```{r outcome_model}
+# Weighted outcome model
+
+# Create svy design object used later
 design_w <- svydesign(
   ~1,
   weights = data_with_ps$sw_trunc,
   data = data_with_ps
 )
 
+# Fit the outcome model
 fit_ipw <- svyglm(CVD ~ medhyper, design = design_w)
 
 summary(fit_ipw)
 confint(fit_ipw)
 
-############################# Estimate ATE
-mean1 <- weighted.mean(
-  data_with_ps$CVD[data_with_ps$medhyper == 1],
-  data_with_ps$sw_trunc[data_with_ps$medhyper == 1]
-)
 
-mean0 <- weighted.mean(
-  data_with_ps$CVD[data_with_ps$medhyper == 0],
-  data_with_ps$sw_trunc[data_with_ps$medhyper == 0]
-)
-
-ATE <- mean1 - mean0
-ATE
+# Extract ATE and 95% CI directly from the model
+ate_est <- coef(fit_ipw)["medhyper"]
+ate_ci <- confint(fit_ipw)["medhyper", ]
 ```
 
+
+## Summary of Propensity Score Methods
+```{r summary_propensity}
+# exponentiate the logit coefficients to get true Odds Ratios
+or_est <- exp(coef(fit_ipw)["medhyper"])
+or_ci  <- exp(confint(fit_ipw)["medhyper", ])
+
+# Create the summary data frame
+results_ipw <- data.frame(
+  Metric = c("IPW Average Treatment Effect (ATE)", "IPW Odds Ratio (OR)"),
+  Estimate = c(ate_est, or_est),
+  Lower_CI = c(ate_ci[1], or_ci[1]),
+  Upper_CI = c(ate_ci[2], or_ci[2])
+)
+
+# Format for display
+results_ipw$Formatted <- sprintf("%.3f (95%% CI: %.3f, %.3f)", 
+                                 results_ipw$Estimate, 
+                                 results_ipw$Lower_CI, 
+                                 results_ipw$Upper_CI)
+
+print(results_ipw[, c("Metric", "Formatted")])
+```
