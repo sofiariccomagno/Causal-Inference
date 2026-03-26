@@ -1,10 +1,4 @@
 ---
-title: "another attempt"
-author: "Group 7"
-date: "`r Sys.Date()`"
-output: html_document
----
----
 title: "Causal Inference Assignment"
 author: "Group 7"
 date: "`r Sys.Date()`"
@@ -858,7 +852,7 @@ love.plot(
   threshold = .1
 )
 ```
-The Love plot confirms that the standardised mean difference for all covariates now fallws below the usual threshold of 0.1, meaning that our exchangeability assumption is satisfied.
+The Love plot confirms that the standardised mean difference for all covariates now falls below the usual threshold of 0.1, meaning that exchangeability after weighting appears plausible.
 
 ## Weighted Outcome Model
 ```{r outcome_model}
